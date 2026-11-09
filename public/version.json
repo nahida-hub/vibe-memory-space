@@ -3,5 +3,5 @@
   "versionCode": 2,
   "publishedAt": "2026-11-09",
   "releaseNotes": "v0.2.0 更新：1. 新增新建便签草稿自动保存防丢失与误删 6 秒撤销；2. 新钉上墙便签自动镜头聚焦高亮，瀑布流支持点击看详情与一键生成多图拼图拍立得海报；3. 新增历史高频 #标签 一键点选与真实日历选择器；4. 新增 ✨ AI 翻阅手账周期回顾周报，拍立得与高光时刻支持 AI 润色与自动打标。",
-  "apkUrl": "http://192.168.31.132:3000/记忆手账.apk"
+  "apkUrl": "https://github.com/nahida-hub/vibe-memory-space/releases/download/v0.2.0/记忆手账.apk"
 }
