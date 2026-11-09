@@ -1,0 +1,13 @@
+{
+  "appId": "com.vibememory.notebook",
+  "appName": "记忆手账",
+  "webDir": "out",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#FBF6E9"
+  }
+}

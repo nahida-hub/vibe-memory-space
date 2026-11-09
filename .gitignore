@@ -1,0 +1,35 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# next.js & static export
+/.next/
+/out/
+/build
+
+# android build & local artifacts
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/capacitor-cordova-android-plugins/build/
+/android/local.properties
+*.apk
+*.aab
+*.keystore
+*.jks
+!android/app/vibe-memory-keystore.jks
+
+# misc
+.DS_Store
+*.pem
+tsconfig.tsbuildinfo
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files (never commit API keys!)
+.env
+.env*.local

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">记忆手账</string>
+    <string name="title_activity_main">记忆手账</string>
+    <string name="package_name">com.vibememory.notebook</string>
+    <string name="custom_url_scheme">com.vibememory.notebook</string>
+</resources>

@@ -1,0 +1,186 @@
+@import "tailwindcss";
+
+:root {
+  --paper-bg: #fbf6e9;
+  --paper-bg-secondary: #f4ecda;
+  --paper-card: #fffdf7;
+  --paper-ai: #f5f0e3;
+  --paper-border: #e6dcc8;
+  --ink-primary: #2c251e;
+  --ink-secondary: #695e52;
+  --ink-muted: #988b7c;
+  --accent-amber: #c87d32;
+  --accent-sage: #5c7457;
+  --accent-gold: #d4942a;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  overscroll-behavior-y: none;
+  touch-action: manipulation;
+}
+
+body {
+  background-color: var(--paper-bg);
+  color: var(--ink-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+    "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  /* 淡淡的手账点阵 + 暖黄纸张柔和光晕 */
+  background-image: 
+    radial-gradient(rgba(166, 142, 110, 0.16) 1px, transparent 1px),
+    radial-gradient(circle at 15% 10%, rgba(255, 248, 231, 0.8) 0%, transparent 55%),
+    radial-gradient(circle at 85% 90%, rgba(242, 228, 198, 0.5) 0%, transparent 60%);
+  background-size: 24px 24px, 100% 100%, 100% 100%;
+  background-attachment: fixed;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 移动端关闭 background-attachment: fixed，彻底消除 iOS Safari 滑动掉帧 */
+@media (max-width: 768px) {
+  body {
+    background-attachment: scroll;
+  }
+}
+
+/* 防止 iOS Safari 点击输入框时强制放大页面，保持原生 App 级稳定视口 */
+@media (max-width: 640px) {
+  input[type="text"],
+  input[type="password"],
+  input[type="search"],
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+/* 按钮与可交互元素的移动端阻尼按压回弹手感 */
+button,
+label {
+  transition: transform 0.14s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    opacity 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+/* 衬线书卷字体：用于金句、大标题、手账感文字 */
+.font-serif-notebook {
+  font-family: "Songti SC", "Noto Serif SC", "STSong", "Source Han Serif SC",
+    Georgia, Cambria, "Times New Roman", Times, serif;
+}
+
+/* 纸张卡片微立体阴影 */
+.paper-shadow {
+  box-shadow:
+    0 2px 5px -1px rgba(68, 52, 34, 0.05),
+    0 8px 20px -4px rgba(68, 52, 34, 0.06),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+}
+
+.paper-shadow-hover {
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (hover: hover) {
+  .paper-shadow-hover:hover {
+    transform: translateY(-3px);
+    box-shadow:
+      0 6px 14px -2px rgba(68, 52, 34, 0.08),
+      0 16px 32px -6px rgba(68, 52, 34, 0.1),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
+  }
+}
+
+/* 拍立得相框专属阴影 */
+.polaroid-shadow {
+  box-shadow:
+    0 3px 8px rgba(55, 42, 28, 0.08),
+    0 12px 24px -6px rgba(55, 42, 28, 0.12),
+    0 0 0 1px rgba(226, 214, 193, 0.85);
+}
+
+/* 墙面便签立体阴影 + 右下角微卷边光影质感 */
+.sticky-note-shadow {
+  position: relative;
+  box-shadow:
+    0 4px 10px -2px rgba(62, 46, 28, 0.1),
+    0 14px 28px -8px rgba(62, 46, 28, 0.12),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.75);
+}
+
+.sticky-note-shadow::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  right: 9px;
+  bottom: 7px;
+  width: 55%;
+  height: 18px;
+  background: rgba(52, 38, 20, 0.18);
+  transform: rotate(3.2deg) skewX(12deg);
+  filter: blur(5px);
+  pointer-events: none;
+}
+
+/* 2D 无限便签墙点阵底纹（随手指拖拽四面八方同步位移） */
+.wall-dot-matrix {
+  background-color: #f6efe0;
+  background-image: radial-gradient(rgba(148, 126, 96, 0.28) 1.25px, transparent 1.25px);
+}
+
+/* 手账横线信纸纹理（用于AI灵感卡背面或折叠区） */
+.notebook-ruled-lines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 27px,
+    rgba(186, 169, 142, 0.22) 28px
+  );
+  line-height: 28px;
+}
+
+/* 隐藏移动端横向标签栏滚动条，同时保留丝滑惯性滑动 */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* iPhone 底部 Home Indicator 安全区适配 */
+.pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.pt-safe {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+
+/* 自定义温润滚动条（桌面端） */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(244, 236, 218, 0.6);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(180, 162, 138, 0.45);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(150, 132, 108, 0.7);
+}

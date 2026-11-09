@@ -1,0 +1,40 @@
+{
+  "name": "vibe-memory-space",
+  "version": "0.2.0",
+  "versionCode": 2,
+  "githubRepo": "",
+  "releaseNotes": "v0.2.0 更新：1. 新增新建便签草稿自动保存防丢失与误删 6 秒撤销；2. 新钉上墙便签自动镜头聚焦高亮，瀑布流支持点击看详情与一键生成多图拼图拍立得海报；3. 新增历史高频 #标签 一键点选与真实日历选择器；4. 新增 ✨ AI 翻阅手账周期回顾周报，拍立得与高光时刻支持 AI 润色与自动打标。",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "build:app": "node scripts/build-android-bundle.mjs",
+    "version:patch": "node scripts/bump-version.mjs patch",
+    "version:minor": "node scripts/bump-version.mjs minor",
+    "version:major": "node scripts/bump-version.mjs major",
+    "apk:open": "npx cap open android",
+    "apk:compile": "node scripts/build-android-bundle.mjs && cd android && JAVA_HOME=/tmp/android-sdk-env/jdk-21.0.13+9/Contents/Home ANDROID_HOME=/tmp/android-sdk-env ./gradlew assembleRelease && cp app/build/outputs/apk/release/app-release.apk ../记忆手账.apk && cp app/build/outputs/apk/release/app-release.apk ../public/记忆手账.apk",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.16.0",
+    "next": "^15.2.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^3.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.0",
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "postcss": "^8.5.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0"
+  }
+}

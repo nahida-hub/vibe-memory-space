@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FBF6E9" />
+      <stop offset="100%" stop-color="#EFE2C6" />
+    </linearGradient>
+    <linearGradient id="bookmark" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#C87D32" />
+      <stop offset="100%" stop-color="#9A5B1A" />
+    </linearGradient>
+  </defs>
+  <!-- 圆角手账底板 -->
+  <rect width="512" height="512" rx="116" fill="url(#bg)" />
+  <rect x="24" y="24" width="464" height="464" rx="96" fill="none" stroke="#DFCFAF" stroke-width="6" />
+  <!-- 笔记本装订左侧书脊 -->
+  <rect x="96" y="76" width="320" height="360" rx="28" fill="#FFFDF8" stroke="#2C251E" stroke-width="14" />
+  <line x1="148" y1="76" x2="148" y2="436" stroke="#2C251E" stroke-width="10" />
+  <!-- 顶部琥珀色书签带 -->
+  <path d="M320 76 H368 V186 L344 166 L320 186 Z" fill="url(#bookmark)" stroke="#2C251E" stroke-width="8" stroke-linejoin="round" />
+  <!-- 手账横线与星芒灵感符号 -->
+  <line x1="184" y1="224" x2="364" y2="224" stroke="#C5B69E" stroke-width="10" stroke-linecap="round" />
+  <line x1="184" y1="276" x2="364" y2="276" stroke="#C5B69E" stroke-width="10" stroke-linecap="round" />
+  <line x1="184" y1="328" x2="304" y2="328" stroke="#C5B69E" stroke-width="10" stroke-linecap="round" />
+  <!-- 灵感闪光四角星 -->
+  <path d="M236 124 L244 148 L268 156 L244 164 L236 188 L228 164 L204 156 L228 148 Z" fill="#5C7457" />
+</svg>
