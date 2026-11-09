@@ -204,6 +204,17 @@ export default function PinboardWall({
   const panRef = useRef(pan);
   const zoomRef = useRef(zoom);
 
+  const MIN_ZOOM = 0.002;
+  const MAX_ZOOM = 2.8;
+
+  const getAdaptiveGridSize = (z: number) => {
+    let size = 26 * z;
+    while (size < 14) {
+      size *= 2;
+    }
+    return size;
+  };
+
   const applyCameraTransform = useCallback(
     (nextX: number, nextY: number, nextZ: number, syncState = false) => {
       panRef.current = { x: nextX, y: nextY };
@@ -212,8 +223,9 @@ export default function PinboardWall({
         canvasRef.current.style.transform = `translate3d(${nextX}px, ${nextY}px, 0) scale(${nextZ})`;
       }
       if (containerRef.current) {
+        const gridSize = getAdaptiveGridSize(nextZ);
         containerRef.current.style.backgroundPosition = `${nextX}px ${nextY}px`;
-        containerRef.current.style.backgroundSize = `${26 * nextZ}px ${26 * nextZ}px`;
+        containerRef.current.style.backgroundSize = `${gridSize}px ${gridSize}`;
       }
       if (syncState) {
         setPan({ x: nextX, y: nextY });
@@ -511,10 +523,20 @@ export default function PinboardWall({
       setDraggingCardId(null);
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const midX =
+        (e.touches[0].clientX + e.touches[1].clientX) / 2 -
+        (typeof window !== "undefined" ? window.innerWidth / 2 : 0);
+      const midY =
+        (e.touches[0].clientY + e.touches[1].clientY) / 2 -
+        (typeof window !== "undefined" ? window.innerHeight / 2 : 0);
       interactionRef.current = {
         ...interactionRef.current,
         mode: "pinch",
-        initialPinchDist: Math.hypot(dx, dy),
+        startX: midX,
+        startY: midY,
+        startPanX: panRef.current.x,
+        startPanY: panRef.current.y,
+        initialPinchDist: Math.max(1, Math.hypot(dx, dy)),
         initialZoom: zoomRef.current,
       };
       return;
@@ -535,13 +557,23 @@ export default function PinboardWall({
     ) {
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const dist = Math.hypot(dx, dy);
+      const dist = Math.max(1, Math.hypot(dx, dy));
       const scaleFactor = dist / state.initialPinchDist;
+      const baseZoom = state.initialZoom || 0.92;
       const nextZoom = Math.min(
-        1.45,
-        Math.max(0.48, (state.initialZoom || 0.92) * scaleFactor)
+        MAX_ZOOM,
+        Math.max(MIN_ZOOM, baseZoom * scaleFactor)
       );
-      applyCameraTransform(panRef.current.x, panRef.current.y, nextZoom, false);
+      const midX =
+        (e.touches[0].clientX + e.touches[1].clientX) / 2 -
+        (typeof window !== "undefined" ? window.innerWidth / 2 : 0);
+      const midY =
+        (e.touches[0].clientY + e.touches[1].clientY) / 2 -
+        (typeof window !== "undefined" ? window.innerHeight / 2 : 0);
+      const ratio = nextZoom / baseZoom;
+      const nextPanX = midX - (state.startX - state.startPanX) * ratio;
+      const nextPanY = midY - (state.startY - state.startPanY) * ratio;
+      applyCameraTransform(nextPanX, nextPanY, nextZoom, false);
       return;
     }
 
@@ -625,6 +657,7 @@ export default function PinboardWall({
         setPan(panRef.current);
       }
     } else if (state.mode === "pinch") {
+      setPan(panRef.current);
       setZoom(zoomRef.current);
     }
     interactionRef.current.mode = "none";
@@ -675,9 +708,16 @@ export default function PinboardWall({
     stopAnimation();
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
-      const delta = -e.deltaY * 0.002;
-      const nextZ = Math.min(1.45, Math.max(0.48, zoomRef.current + delta));
-      applyCameraTransform(panRef.current.x, panRef.current.y, nextZ, true);
+      const factor = Math.exp(-e.deltaY * 0.004);
+      const prevZ = zoomRef.current;
+      const nextZ = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prevZ * factor));
+      const ratio = nextZ / prevZ;
+      applyCameraTransform(
+        panRef.current.x * ratio,
+        panRef.current.y * ratio,
+        nextZ,
+        true
+      );
     } else {
       applyCameraTransform(
         panRef.current.x - e.deltaX,
@@ -703,7 +743,7 @@ export default function PinboardWall({
       onWheel={handleWheel}
       style={{
         backgroundPosition: `${panRef.current.x}px ${panRef.current.y}px`,
-        backgroundSize: `${26 * zoomRef.current}px ${26 * zoomRef.current}px`,
+        backgroundSize: `${getAdaptiveGridSize(zoomRef.current)}px ${getAdaptiveGridSize(zoomRef.current)}px`,
       }}
       className="fixed inset-0 overflow-hidden select-none touch-none cursor-grab active:cursor-grabbing wall-dot-matrix"
     >
@@ -987,12 +1027,12 @@ export default function PinboardWall({
         })}
       </div>
 
-      {/* 左下角极简画布罗盘：锁定纯滑动模式 / 回中心 / 🎲随机漫步 / 缩放 / 整理墙面 */}
+      {/* 左下角极简画布罗盘：上下分层排布，彻底避免与右下角 ➕ 按钮重叠 */}
       <div
         onClick={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
-        className="fixed bottom-6 left-4 z-30 pb-safe flex items-center gap-1.5 flex-wrap"
+        className="fixed bottom-6 left-4 z-30 pb-safe flex flex-col items-start gap-2 max-w-[calc(100vw-6.5rem)]"
       >
         {/* 独立看板锁定按钮：开启后触碰便签不点开详情、不挪动单张便签，全屏纯粹顺滑滑动 */}
         <button
@@ -1007,7 +1047,7 @@ export default function PinboardWall({
               ? "当前为纯滑动模式（点击解锁便签交互）"
               : "锁定看板（开启后触碰便签不打开详情、不移动单张卡片，全屏顺滑滑动）"
           }
-          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold border shadow-md transition-all cursor-pointer ${
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border shadow-md transition-all cursor-pointer ${
             isBoardLocked
               ? "bg-[#2C251E] text-[#E8C589] border-[#5E5042] ring-2 ring-[#C87D32]/50"
               : "bg-[#FFFDF8]/92 backdrop-blur-md text-[#4A3F33] border-[#DED2BA] hover:bg-[#EFE7D6]"
@@ -1044,36 +1084,21 @@ export default function PinboardWall({
           >
             <Dices className="w-3.5 h-3.5 text-[#5C7457]" />
           </button>
-          {onOpenAiReview && (
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic(8);
-                onOpenAiReview();
-              }}
-              title="AI 翻阅手账与周期回顾"
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium text-[#3F563A] bg-[#E8EFE5] hover:bg-[#DCE8D6] cursor-pointer mx-0.5"
-            >
-              <Sparkles className="w-3 h-3 text-[#496044]" />
-              <span>回顾</span>
-            </button>
-          )}
           <button
             type="button"
             onClick={() => {
               triggerHaptic(6);
-              const nextZ = Math.max(
-                0.5,
-                Number((zoomRef.current - 0.15).toFixed(2))
-              );
+              const prevZ = zoomRef.current;
+              const nextZ = Math.max(MIN_ZOOM, prevZ * 0.78);
+              const ratio = nextZ / prevZ;
               applyCameraTransform(
-                panRef.current.x,
-                panRef.current.y,
+                panRef.current.x * ratio,
+                panRef.current.y * ratio,
                 nextZ,
                 true
               );
             }}
-            title="缩小"
+            title="持续缩小"
             className="p-1.5 rounded-full text-[#6E6050] hover:bg-[#EFE7D6] cursor-pointer"
           >
             <ZoomOut className="w-3.5 h-3.5" />
@@ -1082,13 +1107,12 @@ export default function PinboardWall({
             type="button"
             onClick={() => {
               triggerHaptic(6);
-              const nextZ = Math.min(
-                1.4,
-                Number((zoomRef.current + 0.15).toFixed(2))
-              );
+              const prevZ = zoomRef.current;
+              const nextZ = Math.min(MAX_ZOOM, prevZ * 1.28);
+              const ratio = nextZ / prevZ;
               applyCameraTransform(
-                panRef.current.x,
-                panRef.current.y,
+                panRef.current.x * ratio,
+                panRef.current.y * ratio,
                 nextZ,
                 true
               );

@@ -1,7 +1,7 @@
 {
-  "versionName": "0.2.1",
-  "versionCode": 3,
+  "versionName": "0.2.2",
+  "versionCode": 4,
   "publishedAt": "2026-11-09",
   "releaseNotes": "v0.2.1 更新：1. 修复拍立得朋友圈分享海报导出问题，新增应用内海报预览窗、Android 原生一键保存到手机相册 (Pictures/记忆手账) 与调起微信/朋友圈系统分享；2. 左下角新增「🔒 锁定滑动」按钮，开启后触碰便签不点开详情、不挪动单张卡片，全屏顺滑漫游滑动。",
-  "apkUrl": "https://github.com/nahida-hub/vibe-memory-space/releases/download/v0.2.1/记忆手账.apk"
+  "apkUrl": "https://github.com/nahida-hub/vibe-memory-space/releases/download/v0.2.2/记忆手账.apk"
 }
