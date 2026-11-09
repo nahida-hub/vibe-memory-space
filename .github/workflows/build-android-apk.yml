@@ -56,15 +56,15 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease
           cp app/build/outputs/apk/release/app-release.apk ../记忆手账.apk
-          cp app/build/outputs/apk/release/app-release.apk "../记忆手账-v${{ steps.pkg.outputs.version }}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "../vibe-memory-v${{ steps.pkg.outputs.version }}.apk"
 
       - name: Upload Installable Android APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 记忆手账-v${{ steps.pkg.outputs.version }}-apk
+          name: vibe-memory-v${{ steps.pkg.outputs.version }}-apk
           path: |
             记忆手账.apk
-            记忆手账-v${{ steps.pkg.outputs.version }}.apk
+            vibe-memory-v${{ steps.pkg.outputs.version }}.apk
           if-no-files-found: error
 
       - name: Publish GitHub Release for In-App Auto Update
@@ -78,10 +78,9 @@ jobs:
             ---
             📱 **覆盖更新说明**：
             - 已安装旧版的用户可直接在 App 内弹窗点击 **「立即下载并覆盖更新」**；
-            - 或下载下方 `记忆手账.apk` 直接覆盖安装，手机内已有便签、图片与 AI 配置 100% 保留。
+            - 或下载下方 `vibe-memory-v${{ steps.pkg.outputs.version }}.apk` 直接覆盖安装，手机内已有便签、图片与 AI 配置 100% 保留。
           draft: false
           prerelease: false
           files: |
-            记忆手账.apk
-            记忆手账-v${{ steps.pkg.outputs.version }}.apk
+            vibe-memory-v${{ steps.pkg.outputs.version }}.apk
             public/version.json

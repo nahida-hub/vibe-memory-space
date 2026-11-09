@@ -16,6 +16,7 @@ import android.util.Base64;
 
 import androidx.core.content.FileProvider;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -28,11 +29,18 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @CapacitorPlugin(name = "AppUpdater")
 public class AppUpdaterPlugin extends Plugin {
 
     private File lastDownloadedApk = null;
+    private final AtomicInteger activeDownloadTaskId = new AtomicInteger(0);
+    private volatile HttpURLConnection activeDownloadConn = null;
 
     @PluginMethod
     public void getAppInfo(PluginCall call) {
@@ -56,118 +64,248 @@ public class AppUpdaterPlugin extends Plugin {
         }
     }
 
+    private List<String> buildCandidateUrlList(String primaryUrl, JSArray urlsArray) {
+        Set<String> candidates = new LinkedHashSet<>();
+        if (urlsArray != null) {
+            try {
+                List<String> list = urlsArray.toList();
+                for (Object item : list) {
+                    if (item instanceof String && !((String) item).trim().isEmpty()) {
+                        candidates.add(((String) item).trim());
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (primaryUrl != null && !primaryUrl.trim().isEmpty()) {
+            String trimmed = primaryUrl.trim();
+            candidates.add(trimmed);
+
+            String rawGithubUrl = trimmed;
+            String[] prefixes = new String[]{
+                    "https://gh-proxy.com/",
+                    "https://ghfast.top/",
+                    "https://ghproxy.net/"
+            };
+            for (String p : prefixes) {
+                if (rawGithubUrl.startsWith(p)) {
+                    rawGithubUrl = rawGithubUrl.substring(p.length());
+                    break;
+                }
+            }
+            if (rawGithubUrl.startsWith("https://github.com/")
+                    || rawGithubUrl.startsWith("https://raw.githubusercontent.com/")) {
+                for (String p : prefixes) {
+                    candidates.add(p + rawGithubUrl);
+                }
+                candidates.add(rawGithubUrl);
+            }
+        }
+        return new ArrayList<>(candidates);
+    }
+
+    @PluginMethod
+    public void cancelDownload(PluginCall call) {
+        activeDownloadTaskId.incrementAndGet();
+        HttpURLConnection conn = activeDownloadConn;
+        activeDownloadConn = null;
+        if (conn != null) {
+            new Thread(() -> {
+                try {
+                    conn.disconnect();
+                } catch (Exception ignored) {
+                }
+            }).start();
+        }
+        call.resolve();
+    }
+
     @PluginMethod
     public void downloadAndInstallApk(PluginCall call) {
         final String apkUrl = call.getString("url");
+        final JSArray urlsArray = call.getArray("urls");
         final String fileName = call.getString("fileName", "vibe-memory-update.apk");
+        final Long expectedBytesOpt = call.getLong("expectedBytes", -1L);
+        final long expectedBytes = expectedBytesOpt != null ? expectedBytesOpt : -1L;
 
-        if (apkUrl == null || apkUrl.trim().isEmpty()) {
+        final List<String> candidateUrls = buildCandidateUrlList(apkUrl, urlsArray);
+        if (candidateUrls.isEmpty()) {
             call.reject("Missing APK download URL");
             return;
         }
 
-        new Thread(() -> {
-            HttpURLConnection connection = null;
-            InputStream input = null;
-            FileOutputStream output = null;
+        final int taskId = activeDownloadTaskId.incrementAndGet();
+        HttpURLConnection prevConn = activeDownloadConn;
+        if (prevConn != null) {
             try {
-                File updateDir = new File(getContext().getCacheDir(), "updates");
-                if (!updateDir.exists()) {
-                    updateDir.mkdirs();
-                }
+                prevConn.disconnect();
+            } catch (Exception ignored) {
+            }
+        }
 
-                String safeName = fileName.replaceAll("[^a-zA-Z0-9._\\-\\u4e00-\\u9fa5]", "_");
-                if (!safeName.endsWith(".apk")) {
-                    safeName += ".apk";
-                }
-                File targetFile = new File(updateDir, safeName);
-                if (targetFile.exists()) {
-                    targetFile.delete();
-                }
+        new Thread(() -> {
+            File updateDir = new File(getContext().getCacheDir(), "updates");
+            if (!updateDir.exists()) {
+                updateDir.mkdirs();
+            }
 
-                String currentUrl = apkUrl;
-                int redirectCount = 0;
-                while (redirectCount < 8) {
-                    URL url = new URL(currentUrl);
-                    connection = (HttpURLConnection) url.openConnection();
-                    connection.setConnectTimeout(15000);
-                    connection.setReadTimeout(30000);
-                    connection.setInstanceFollowRedirects(true);
-                    connection.setRequestProperty("User-Agent", "VibeMemoryNotebook-Updater/1.0");
-                    connection.connect();
+            String safeName = fileName.replaceAll("[^a-zA-Z0-9._\\-\\u4e00-\\u9fa5]", "_");
+            if (!safeName.endsWith(".apk")) {
+                safeName += ".apk";
+            }
+            File targetFile = new File(updateDir, safeName);
 
-                    int status = connection.getResponseCode();
-                    if (status == HttpURLConnection.HTTP_MOVED_TEMP
-                            || status == HttpURLConnection.HTTP_MOVED_PERM
-                            || status == HttpURLConnection.HTTP_SEE_OTHER
-                            || status == 307
-                            || status == 308) {
-                        String nextUrl = connection.getHeaderField("Location");
-                        connection.disconnect();
-                        currentUrl = nextUrl;
-                        redirectCount++;
-                        continue;
-                    }
-                    break;
-                }
+            String lastError = "网络连接超时";
 
-                int responseCode = connection.getResponseCode();
-                if (responseCode != HttpURLConnection.HTTP_OK) {
-                    call.reject("HTTP " + responseCode + ": 下载安装包失败");
+            for (int routeIdx = 0; routeIdx < candidateUrls.size(); routeIdx++) {
+                if (activeDownloadTaskId.get() != taskId) {
+                    call.reject("下载已取消");
                     return;
                 }
 
-                int totalBytes = connection.getContentLength();
-                input = connection.getInputStream();
-                output = new FileOutputStream(targetFile);
+                String candidateUrl = candidateUrls.get(routeIdx);
+                String channelLabel = candidateUrl.startsWith("https://gh-proxy.com/")
+                        ? "加速节点 1 (gh-proxy)"
+                        : candidateUrl.startsWith("https://ghfast.top/")
+                        ? "加速节点 2 (ghfast)"
+                        : candidateUrl.startsWith("https://ghproxy.net/")
+                        ? "加速节点 3 (ghproxy)"
+                        : "GitHub 源站直连";
 
-                byte[] buffer = new byte[16384];
-                long downloadedBytes = 0;
-                int count;
-                long lastNotifyTime = 0;
+                JSObject initObj = new JSObject();
+                initObj.put("progress", 1);
+                initObj.put("downloadedBytes", 0);
+                initObj.put("totalBytes", expectedBytes > 0 ? expectedBytes : 0);
+                initObj.put("status", "connecting");
+                initObj.put("channelLabel", channelLabel);
+                notifyListeners("downloadProgress", initObj);
 
-                while ((count = input.read(buffer)) != -1) {
-                    output.write(buffer, 0, count);
-                    downloadedBytes += count;
+                HttpURLConnection connection = null;
+                InputStream input = null;
+                FileOutputStream output = null;
 
-                    long now = System.currentTimeMillis();
-                    if (now - lastNotifyTime >= 120 || downloadedBytes == totalBytes) {
-                        lastNotifyTime = now;
-                        int progress = totalBytes > 0
-                                ? (int) Math.min(100, (downloadedBytes * 100L) / totalBytes)
-                                : -1;
-                        JSObject progressObj = new JSObject();
-                        progressObj.put("progress", progress);
-                        progressObj.put("downloadedBytes", downloadedBytes);
-                        progressObj.put("totalBytes", totalBytes);
-                        progressObj.put("status", "downloading");
-                        notifyListeners("downloadProgress", progressObj);
+                try {
+                    if (targetFile.exists()) {
+                        targetFile.delete();
+                    }
+
+                    String currentUrl = candidateUrl;
+                    int redirectCount = 0;
+                    while (redirectCount < 8) {
+                        if (activeDownloadTaskId.get() != taskId) {
+                            call.reject("下载已取消");
+                            return;
+                        }
+                        URL url = new URL(currentUrl);
+                        connection = (HttpURLConnection) url.openConnection();
+                        activeDownloadConn = connection;
+                        connection.setConnectTimeout(8000);
+                        connection.setReadTimeout(12000);
+                        connection.setInstanceFollowRedirects(false);
+                        connection.setRequestProperty("Accept-Encoding", "identity");
+                        connection.setRequestProperty(
+                                "User-Agent",
+                                "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+                        );
+                        connection.connect();
+
+                        int status = connection.getResponseCode();
+                        if (status == HttpURLConnection.HTTP_MOVED_TEMP
+                                || status == HttpURLConnection.HTTP_MOVED_PERM
+                                || status == HttpURLConnection.HTTP_SEE_OTHER
+                                || status == 307
+                                || status == 308) {
+                            String nextLocation = connection.getHeaderField("Location");
+                            connection.disconnect();
+                            if (nextLocation == null || nextLocation.isEmpty()) {
+                                break;
+                            }
+                            currentUrl = new URL(url, nextLocation).toString();
+                            redirectCount++;
+                            continue;
+                        }
+                        break;
+                    }
+
+                    int responseCode = connection.getResponseCode();
+                    if (responseCode != HttpURLConnection.HTTP_OK && responseCode != HttpURLConnection.HTTP_PARTIAL) {
+                        lastError = channelLabel + " 响应 HTTP " + responseCode;
+                        continue;
+                    }
+
+                    long headerLength = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
+                            ? connection.getContentLengthLong()
+                            : connection.getContentLength();
+                    long totalBytes = headerLength > 0 ? headerLength : expectedBytes;
+
+                    input = connection.getInputStream();
+                    output = new FileOutputStream(targetFile);
+
+                    byte[] buffer = new byte[16384];
+                    long downloadedBytes = 0;
+                    int count;
+                    long lastNotifyTime = 0;
+
+                    while ((count = input.read(buffer)) != -1) {
+                        if (activeDownloadTaskId.get() != taskId) {
+                            call.reject("下载已取消");
+                            return;
+                        }
+                        output.write(buffer, 0, count);
+                        downloadedBytes += count;
+
+                        long now = System.currentTimeMillis();
+                        if (now - lastNotifyTime >= 80 || (totalBytes > 0 && downloadedBytes >= totalBytes)) {
+                            lastNotifyTime = now;
+                            int progress = totalBytes > 0
+                                    ? (int) Math.min(99, Math.max(1, (downloadedBytes * 100L) / totalBytes))
+                                    : (int) Math.min(95, Math.max(2, (downloadedBytes * 100L) / (4L * 1024L * 1024L)));
+                            JSObject progressObj = new JSObject();
+                            progressObj.put("progress", progress);
+                            progressObj.put("downloadedBytes", downloadedBytes);
+                            progressObj.put("totalBytes", totalBytes > 0 ? totalBytes : 0);
+                            progressObj.put("status", "downloading");
+                            progressObj.put("channelLabel", channelLabel);
+                            notifyListeners("downloadProgress", progressObj);
+                        }
+                    }
+
+                    output.flush();
+                    output.close();
+                    output = null;
+
+                    if (downloadedBytes < 100 * 1024) {
+                        lastError = channelLabel + " 返回的安装包不完整 (" + downloadedBytes + " B)";
+                        continue;
+                    }
+
+                    lastDownloadedApk = targetFile;
+
+                    JSObject doneObj = new JSObject();
+                    doneObj.put("progress", 100);
+                    doneObj.put("downloadedBytes", downloadedBytes);
+                    doneObj.put("totalBytes", downloadedBytes);
+                    doneObj.put("status", "completed");
+                    doneObj.put("channelLabel", channelLabel);
+                    notifyListeners("downloadProgress", doneObj);
+
+                    getBridge().executeOnMainThread(() -> {
+                        installApkInternal(targetFile, call);
+                    });
+                    return;
+                } catch (Exception e) {
+                    lastError = channelLabel + " 连接异常: " + e.getMessage();
+                } finally {
+                    try {
+                        if (output != null) output.close();
+                        if (input != null) input.close();
+                        if (connection != null) connection.disconnect();
+                    } catch (Exception ignored) {
                     }
                 }
-
-                output.flush();
-                lastDownloadedApk = targetFile;
-
-                JSObject doneObj = new JSObject();
-                doneObj.put("progress", 100);
-                doneObj.put("downloadedBytes", downloadedBytes);
-                doneObj.put("totalBytes", downloadedBytes);
-                doneObj.put("status", "completed");
-                notifyListeners("downloadProgress", doneObj);
-
-                getBridge().executeOnMainThread(() -> {
-                    installApkInternal(targetFile, call);
-                });
-            } catch (Exception e) {
-                call.reject("下载更新包出错: " + e.getMessage());
-            } finally {
-                try {
-                    if (output != null) output.close();
-                    if (input != null) input.close();
-                    if (connection != null) connection.disconnect();
-                } catch (Exception ignored) {
-                }
             }
+
+            call.reject("所有下载通道均未成功 (" + lastError + ")，请点击下方「用系统浏览器下载」");
         }).start();
     }
 

@@ -15,6 +15,7 @@ import {
 import {
   AppUpdaterNative,
   RemoteReleaseInfo,
+  buildMirrorCandidateUrls,
   formatBytes,
   IGNORED_VERSION_STORAGE_KEY,
 } from "@/utils/appUpdater";
@@ -39,6 +40,7 @@ export default function UpdateModal({
   const [progress, setProgress] = useState(0);
   const [downloadedBytes, setDownloadedBytes] = useState(0);
   const [totalBytes, setTotalBytes] = useState(0);
+  const [channelLabel, setChannelLabel] = useState<string>("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [useDirectLink, setUseDirectLink] = useState(false);
 
@@ -46,6 +48,7 @@ export default function UpdateModal({
     if (!isOpen) {
       setDownloadStatus("idle");
       setProgress(0);
+      setChannelLabel("");
       setStatusMessage(null);
       return;
     }
@@ -53,9 +56,12 @@ export default function UpdateModal({
     let listenerHandle: { remove: () => Promise<void> } | null = null;
     if (Capacitor.isNativePlatform()) {
       AppUpdaterNative.addListener("downloadProgress", (ev) => {
-        setProgress(ev.progress >= 0 ? ev.progress : 50);
+        setProgress(ev.progress >= 0 ? ev.progress : 15);
         setDownloadedBytes(ev.downloadedBytes || 0);
         setTotalBytes(ev.totalBytes || 0);
+        if (ev.channelLabel) {
+          setChannelLabel(ev.channelLabel);
+        }
         if (ev.status === "completed") {
           setDownloadStatus("ready_to_install");
         } else {
@@ -75,15 +81,26 @@ export default function UpdateModal({
 
   if (!isOpen || !release) return null;
 
-  const targetApkUrl = useDirectLink
-    ? release.rawApkUrl || release.apkUrl
-    : release.apkUrl || release.rawApkUrl;
+  const rawUrl = release.rawApkUrl || release.apkUrl;
+  const candidateUrls = buildMirrorCandidateUrls(rawUrl, !useDirectLink);
+  const targetApkUrl =
+    candidateUrls[0] ||
+    (useDirectLink
+      ? release.rawApkUrl || release.apkUrl
+      : release.apkUrl || release.rawApkUrl);
 
-  const handleStartInAppUpdate = async () => {
+  const startDownloadWithMode = async (directMode: boolean) => {
     triggerHaptic(10);
     setStatusMessage(null);
 
-    if (!targetApkUrl) {
+    const urls = buildMirrorCandidateUrls(rawUrl, !directMode);
+    const primaryUrl =
+      urls[0] ||
+      (directMode
+        ? release.rawApkUrl || release.apkUrl
+        : release.apkUrl || release.rawApkUrl);
+
+    if (!primaryUrl) {
       if (release.htmlUrl) {
         handleOpenBrowser(release.htmlUrl);
       } else {
@@ -95,16 +112,22 @@ export default function UpdateModal({
 
     // 如果是在网页浏览器中打开，直接跳转下载链接
     if (!Capacitor.isNativePlatform()) {
-      window.open(targetApkUrl, "_blank", "noopener,noreferrer");
+      window.open(primaryUrl, "_blank", "noopener,noreferrer");
       return;
     }
 
     try {
       setDownloadStatus("downloading");
-      setProgress(0);
+      setProgress(1);
+      setDownloadedBytes(0);
+      setTotalBytes(release.apkSizeBytes || 0);
+      setChannelLabel(directMode ? "GitHub 源站直连" : "加速节点 1 (gh-proxy)");
+
       const res = await AppUpdaterNative.downloadAndInstallApk({
-        url: targetApkUrl,
-        fileName: `记忆手账-v${release.versionName}.apk`,
+        url: primaryUrl,
+        urls,
+        fileName: `vibe-memory-v${release.versionName}.apk`,
+        expectedBytes: release.apkSizeBytes,
       });
       setDownloadStatus("ready_to_install");
       if (res.needsPermission) {
@@ -116,11 +139,46 @@ export default function UpdateModal({
         setStatusMessage("已调起系统安装器，请点击「继续安装 / 更新」");
       }
     } catch (err: any) {
+      const msg = err?.message || "";
+      if (msg.includes("已取消")) {
+        return;
+      }
       setDownloadStatus("error");
       setStatusMessage(
-        err?.message || "应用内下载失败，可尝试切换通道或使用浏览器下载"
+        msg || "应用内下载失败，可尝试切换通道或使用浏览器下载"
       );
     }
+  };
+
+  const handleStartInAppUpdate = () => {
+    startDownloadWithMode(useDirectLink);
+  };
+
+  const handleSwitchChannel = async () => {
+    triggerHaptic(8);
+    const nextDirect = !useDirectLink;
+    setUseDirectLink(nextDirect);
+    // 如果当前正卡在下载中，切换通道时立即中断旧连接并用新通道重新开始下载
+    if (downloadStatus === "downloading") {
+      try {
+        await AppUpdaterNative.cancelDownload();
+      } catch {
+        // ignore
+      }
+      startDownloadWithMode(nextDirect);
+    }
+  };
+
+  const handleCancelAndClose = async () => {
+    if (downloadStatus === "downloading" && Capacitor.isNativePlatform()) {
+      try {
+        await AppUpdaterNative.cancelDownload();
+      } catch {
+        // ignore
+      }
+    }
+    setDownloadStatus("idle");
+    onClose();
   };
 
   const handleReinstallCached = async () => {
@@ -191,15 +249,13 @@ export default function UpdateModal({
             </div>
           </div>
 
-          {downloadStatus !== "downloading" && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-full text-[#7E7060] hover:text-[#2C251E] hover:bg-[#E6DAC4] cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleCancelAndClose}
+            className="p-1.5 rounded-full text-[#7E7060] hover:text-[#2C251E] hover:bg-[#E6DAC4] cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         {/* 主体内容 */}
@@ -227,13 +283,19 @@ export default function UpdateModal({
           {downloadStatus === "downloading" && (
             <div className="space-y-1.5 p-3 rounded-2xl bg-[#F4ECE0] border border-[#E2D5BE]">
               <div className="flex items-center justify-between text-xs font-medium text-[#3F3428]">
-                <span>正在下载更新包...</span>
-                <span>
+                <span className="truncate pr-2">
+                  {channelLabel
+                    ? `正在通过 ${channelLabel} 下载...`
+                    : "正在下载更新包..."}
+                </span>
+                <span className="shrink-0 font-mono">
                   {progress >= 0 ? `${progress}%` : "下载中"}
                   {totalBytes > 0
                     ? ` (${formatBytes(downloadedBytes)} / ${formatBytes(
                         totalBytes
                       )})`
+                    : downloadedBytes > 0
+                    ? ` (${formatBytes(downloadedBytes)})`
                     : ""}
                 </span>
               </div>
@@ -285,7 +347,7 @@ export default function UpdateModal({
                 <Download className="w-4 h-4 text-[#E8C589]" />
                 <span>
                   {downloadStatus === "downloading"
-                    ? "正在下载安装包..."
+                    ? "正在下载安装包 (超时将自动切换节点)..."
                     : "立即下载并覆盖更新"}
                 </span>
               </button>
@@ -294,15 +356,17 @@ export default function UpdateModal({
             {/* 备选：切换直连/镜像 或 浏览器下载 */}
             <div className="flex items-center justify-between gap-2 pt-1 text-[11px] text-[#7D6E5D]">
               <div className="flex items-center gap-3">
-                {release.rawApkUrl && release.rawApkUrl !== release.apkUrl && (
+                {release.rawApkUrl && (
                   <button
                     type="button"
-                    onClick={() => setUseDirectLink(!useDirectLink)}
+                    onClick={handleSwitchChannel}
                     className="inline-flex items-center gap-1 hover:text-[#2C251E] underline cursor-pointer"
                   >
                     <RefreshCw className="w-3 h-3" />
                     <span>
-                      {useDirectLink ? "切换镜像加速" : "切换 GitHub 直连"}
+                      {useDirectLink
+                        ? "切换国内镜像加速"
+                        : "切换 GitHub 直连"}
                     </span>
                   </button>
                 )}

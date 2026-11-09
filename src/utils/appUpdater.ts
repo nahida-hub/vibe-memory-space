@@ -16,7 +16,8 @@ export interface DownloadProgressEvent {
   progress: number;
   downloadedBytes: number;
   totalBytes: number;
-  status: "downloading" | "completed";
+  status: "connecting" | "downloading" | "completed";
+  channelLabel?: string;
 }
 
 export interface InstallResult {
@@ -29,8 +30,11 @@ interface AppUpdaterPluginInterface {
   getAppInfo(): Promise<NativeAppInfo>;
   downloadAndInstallApk(options: {
     url: string;
+    urls?: string[];
     fileName?: string;
+    expectedBytes?: number;
   }): Promise<InstallResult>;
+  cancelDownload(): Promise<void>;
   installCachedApk(): Promise<InstallResult>;
   openExternalUrl(options: { url: string }): Promise<void>;
   saveImageToGallery(options: {
@@ -78,6 +82,7 @@ export interface RemoteReleaseInfo {
   publishedAt: string;
   apkUrl: string;
   rawApkUrl: string;
+  candidateUrls?: string[];
   apkSizeBytes?: number;
   htmlUrl?: string;
 }
@@ -184,16 +189,35 @@ export function compareSemver(a: string, b: string): number {
   return 0;
 }
 
+export const GITHUB_MIRROR_PREFIXES = [
+  "https://gh-proxy.com/",
+  "https://ghfast.top/",
+  "https://ghproxy.net/",
+];
+
+export function isGithubAssetUrl(url: string): boolean {
+  return (
+    url.startsWith("https://github.com/") ||
+    url.startsWith("https://raw.githubusercontent.com/")
+  );
+}
+
 export function applyMirrorIfNeeded(url: string, useMirror: boolean): string {
   if (!url) return "";
-  if (
-    useMirror &&
-    (url.startsWith("https://github.com/") ||
-      url.startsWith("https://raw.githubusercontent.com/"))
-  ) {
-    return `https://ghfast.top/${url}`;
+  if (useMirror && isGithubAssetUrl(url)) {
+    return `${GITHUB_MIRROR_PREFIXES[0]}${url}`;
   }
   return url;
+}
+
+export function buildMirrorCandidateUrls(
+  rawUrl: string,
+  useMirror: boolean
+): string[] {
+  if (!rawUrl) return [];
+  if (!isGithubAssetUrl(rawUrl)) return [rawUrl];
+  const mirrored = GITHUB_MIRROR_PREFIXES.map((prefix) => `${prefix}${rawUrl}`);
+  return useMirror ? [...mirrored, rawUrl] : [rawUrl, ...mirrored];
 }
 
 export async function checkForAppUpdate(
@@ -255,6 +279,7 @@ export async function checkForAppUpdate(
           publishedAt: data.publishedAt || "",
           rawApkUrl,
           apkUrl: applyMirrorIfNeeded(rawApkUrl, config.useMirror),
+          candidateUrls: buildMirrorCandidateUrls(rawApkUrl, config.useMirror),
           apkSizeBytes: data.apkSizeBytes,
           htmlUrl: data.htmlUrl,
         },
@@ -292,9 +317,12 @@ export async function checkForAppUpdate(
       size: number;
     }> = Array.isArray(release.assets) ? release.assets : [];
 
-    const apkAsset = assets.find((a) =>
-      a.name.toLowerCase().endsWith(".apk")
-    );
+    // 优先选择纯英文名的 apk（避免中文被 GitHub 剥离成前导连字符 -vX.Y.Z.apk 导致部分镜像解析异常）
+    const apkAsset =
+      assets.find(
+        (a) =>
+          a.name.toLowerCase().endsWith(".apk") && !a.name.startsWith("-")
+      ) || assets.find((a) => a.name.toLowerCase().endsWith(".apk"));
     const rawApkUrl = apkAsset ? apkAsset.browser_download_url : "";
     const isNewer = compareSemver(remoteVersionName, current.versionName) > 0;
 
@@ -311,6 +339,7 @@ export async function checkForAppUpdate(
           : "",
         rawApkUrl,
         apkUrl: applyMirrorIfNeeded(rawApkUrl, config.useMirror),
+        candidateUrls: buildMirrorCandidateUrls(rawApkUrl, config.useMirror),
         apkSizeBytes: apkAsset?.size,
         htmlUrl: release.html_url,
       },
