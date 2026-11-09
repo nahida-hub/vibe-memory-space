@@ -1,9 +1,9 @@
 {
   "name": "vibe-memory-space",
-  "version": "0.2.0",
-  "versionCode": 2,
+  "version": "0.2.1",
+  "versionCode": 3,
   "githubRepo": "nahida-hub/vibe-memory-space",
-  "releaseNotes": "v0.2.0 更新：1. 新增新建便签草稿自动保存防丢失与误删 6 秒撤销；2. 新钉上墙便签自动镜头聚焦高亮，瀑布流支持点击看详情与一键生成多图拼图拍立得海报；3. 新增历史高频 #标签 一键点选与真实日历选择器；4. 新增 ✨ AI 翻阅手账周期回顾周报，拍立得与高光时刻支持 AI 润色与自动打标。",
+  "releaseNotes": "v0.2.1 更新：1. 修复拍立得朋友圈分享海报导出问题，新增应用内海报预览窗、Android 原生一键保存到手机相册 (Pictures/记忆手账) 与调起微信/朋友圈系统分享；2. 左下角新增「🔒 锁定滑动」按钮，开启后触碰便签不点开详情、不挪动单张卡片，全屏顺滑漫游滑动。",
   "private": true,
   "scripts": {
     "dev": "next dev",

@@ -33,6 +33,15 @@ interface AppUpdaterPluginInterface {
   }): Promise<InstallResult>;
   installCachedApk(): Promise<InstallResult>;
   openExternalUrl(options: { url: string }): Promise<void>;
+  saveImageToGallery(options: {
+    base64Data: string;
+    fileName?: string;
+  }): Promise<{ saved: boolean; uri?: string; album?: string }>;
+  shareImage(options: {
+    base64Data: string;
+    fileName?: string;
+    title?: string;
+  }): Promise<{ shared: boolean }>;
   addListener(
     eventName: "downloadProgress",
     listenerFunc: (event: DownloadProgressEvent) => void

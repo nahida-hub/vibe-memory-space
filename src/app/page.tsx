@@ -35,6 +35,7 @@ import SettingsModal from "@/components/SettingsModal";
 import ImageLightbox from "@/components/ImageLightbox";
 import UpdateModal from "@/components/UpdateModal";
 import AiReviewModal from "@/components/AiReviewModal";
+import PosterPreviewModal from "@/components/PosterPreviewModal";
 import {
   RemoteReleaseInfo,
   checkForAppUpdate,
@@ -793,6 +794,9 @@ export default function HomePage() {
           setUpdateModalState((prev) => ({ ...prev, isOpen: false }))
         }
       />
+
+      {/* 拍立得朋友圈分享海报预览与原生保存/分享弹窗 */}
+      <PosterPreviewModal />
 
       {/* 拍立得全屏看大图 */}
       {lightboxState && (

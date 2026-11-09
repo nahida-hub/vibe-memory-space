@@ -11,14 +11,49 @@ const PAPER_HEX: Record<
   kraft: { bg: "#EFE1C6", border: "#D4BD94", accent: "#8C5828" },
 };
 
+export interface GeneratedPosterPayload {
+  dataUrl: string;
+  fileName: string;
+  title: string;
+}
+
+export const POSTER_GENERATED_EVENT = "vibe-poster-generated";
+
 function loadImageElement(src: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
+    let settled = false;
+    const finish = (val: HTMLImageElement | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(val);
+    };
+
+    const timer = setTimeout(() => finish(null), 6000);
     const img = new Image();
     if (src.startsWith("http")) {
       img.crossOrigin = "anonymous";
     }
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
+    img.onload = () => {
+      clearTimeout(timer);
+      // 检查是否因跨域污染 Canvas，若污染则跳过该外链图以保证整张海报能正常导出
+      try {
+        const testCanvas = document.createElement("canvas");
+        testCanvas.width = 1;
+        testCanvas.height = 1;
+        const tCtx = testCanvas.getContext("2d");
+        if (tCtx) {
+          tCtx.drawImage(img, 0, 0, 1, 1);
+          testCanvas.toDataURL("image/png");
+        }
+        finish(img);
+      } catch {
+        finish(null);
+      }
+    };
+    img.onerror = () => {
+      clearTimeout(timer);
+      finish(null);
+    };
     img.src = src;
   });
 }
@@ -393,42 +428,25 @@ export async function exportCardAsPolaroidImage(
   const dateWidth = ctx.measureText(dateText).width;
   ctx.fillText(dateText, leftX + contentWidth - dateWidth, footerY);
 
-  // 8. 导出 Blob 并触发系统分享或下载
-  return new Promise((resolve) => {
-    canvas.toBlob(async (blob) => {
-      if (!blob) {
-        resolve(false);
-        return;
-      }
-      const fileName = `note-${card.id.slice(-6)}.png`;
-      const file = new File([blob], fileName, { type: "image/png" });
+  // 8. 生成高清 PNG Base64 并唤起应用内海报预览与原生保存/分享弹窗
+  try {
+    const dataUrl = canvas.toDataURL("image/png");
+    const fileName = `记忆手账-${card.id.slice(-6)}.png`;
+    const title = card.title || card.summary || "记忆手账分享卡";
 
-      // 移动端如果支持原生图片分享面板，优先调起系统分享（可直接发微信/存相册）
-      try {
-        if (
-          typeof navigator !== "undefined" &&
-          navigator.canShare &&
-          navigator.canShare({ files: [file] }) &&
-          /iPhone|iPad|Android/i.test(navigator.userAgent)
-        ) {
-          await navigator.share({
-            files: [file],
-            title: card.title || card.summary || "便签卡片",
-          });
-          resolve(true);
-          return;
-        }
-      } catch {
-        // 用户取消分享或不支持时回退至直接下载图片
-      }
-
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
-      resolve(true);
-    }, "image/png");
-  });
+    if (typeof window !== "undefined") {
+      const payload: GeneratedPosterPayload = {
+        dataUrl,
+        fileName,
+        title,
+      };
+      window.dispatchEvent(
+        new CustomEvent(POSTER_GENERATED_EVENT, { detail: payload })
+      );
+    }
+    return true;
+  } catch (err) {
+    console.error("生成分享海报失败:", err);
+    return false;
+  }
 }

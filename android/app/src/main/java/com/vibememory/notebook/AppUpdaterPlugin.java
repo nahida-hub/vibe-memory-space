@@ -1,12 +1,18 @@
 package com.vibememory.notebook;
 
+import android.content.ClipData;
+import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.provider.Settings;
+import android.util.Base64;
 
 import androidx.core.content.FileProvider;
 
@@ -19,6 +25,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
@@ -190,6 +197,145 @@ public class AppUpdaterPlugin extends Plugin {
         } catch (Exception e) {
             call.reject("无法打开外部链接: " + e.getMessage());
         }
+    }
+
+    /**
+     * 将生成的拍立得分享海报直接存入手机系统相册 (Pictures/记忆手账)
+     */
+    @PluginMethod
+    public void saveImageToGallery(PluginCall call) {
+        String base64Data = call.getString("base64Data");
+        String fileName = call.getString("fileName", "记忆手账-" + System.currentTimeMillis() + ".png");
+
+        if (base64Data == null || base64Data.isEmpty()) {
+            call.reject("图片数据为空");
+            return;
+        }
+
+        new Thread(() -> {
+            try {
+                String pureBase64 = base64Data;
+                int commaIdx = base64Data.indexOf(',');
+                if (commaIdx != -1) {
+                    pureBase64 = base64Data.substring(commaIdx + 1);
+                }
+                byte[] imageBytes = Base64.decode(pureBase64, Base64.DEFAULT);
+
+                String safeName = fileName.replaceAll("[^a-zA-Z0-9._\\-\\u4e00-\\u9fa5]", "_");
+                if (!safeName.toLowerCase().endsWith(".png")) {
+                    safeName += ".png";
+                }
+
+                Context context = getContext();
+                ContentResolver resolver = context.getContentResolver();
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.Images.Media.DISPLAY_NAME, safeName);
+                values.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    values.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/记忆手账");
+                    values.put(MediaStore.Images.Media.IS_PENDING, 1);
+                }
+
+                Uri imageUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+                if (imageUri == null) {
+                    call.reject("系统相册创建图片记录失败");
+                    return;
+                }
+
+                try (OutputStream out = resolver.openOutputStream(imageUri)) {
+                    if (out == null) {
+                        call.reject("无法写入系统相册输出流");
+                        return;
+                    }
+                    out.write(imageBytes);
+                    out.flush();
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    values.clear();
+                    values.put(MediaStore.Images.Media.IS_PENDING, 0);
+                    resolver.update(imageUri, values, null, null);
+                }
+
+                JSObject res = new JSObject();
+                res.put("saved", true);
+                res.put("uri", imageUri.toString());
+                res.put("album", "相册/记忆手账/" + safeName);
+                call.resolve(res);
+            } catch (Exception e) {
+                call.reject("保存到相册失败: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    /**
+     * 将生成的拍立得分享海报通过 Android 原生分享面板发送给微信好友/朋友圈/小红书等
+     */
+    @PluginMethod
+    public void shareImage(PluginCall call) {
+        String base64Data = call.getString("base64Data");
+        String fileName = call.getString("fileName", "记忆手账分享卡.png");
+        String title = call.getString("title", "分享手账卡片");
+
+        if (base64Data == null || base64Data.isEmpty()) {
+            call.reject("图片数据为空");
+            return;
+        }
+
+        new Thread(() -> {
+            try {
+                String pureBase64 = base64Data;
+                int commaIdx = base64Data.indexOf(',');
+                if (commaIdx != -1) {
+                    pureBase64 = base64Data.substring(commaIdx + 1);
+                }
+                byte[] imageBytes = Base64.decode(pureBase64, Base64.DEFAULT);
+
+                File shareDir = new File(getContext().getCacheDir(), "shared");
+                if (!shareDir.exists()) {
+                    shareDir.mkdirs();
+                }
+
+                String safeName = fileName.replaceAll("[^a-zA-Z0-9._\\-\\u4e00-\\u9fa5]", "_");
+                if (!safeName.toLowerCase().endsWith(".png")) {
+                    safeName += ".png";
+                }
+                File imageFile = new File(shareDir, safeName);
+                try (FileOutputStream fos = new FileOutputStream(imageFile)) {
+                    fos.write(imageBytes);
+                    fos.flush();
+                }
+
+                Context context = getContext();
+                Uri contentUri = FileProvider.getUriForFile(
+                        context,
+                        context.getPackageName() + ".fileprovider",
+                        imageFile
+                );
+
+                getBridge().executeOnMainThread(() -> {
+                    try {
+                        Intent shareIntent = new Intent(Intent.ACTION_SEND);
+                        shareIntent.setType("image/png");
+                        shareIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
+                        shareIntent.setClipData(ClipData.newRawUri(title, contentUri));
+                        shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+                        Intent chooser = Intent.createChooser(shareIntent, title);
+                        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        context.startActivity(chooser);
+
+                        JSObject res = new JSObject();
+                        res.put("shared", true);
+                        call.resolve(res);
+                    } catch (Exception e) {
+                        call.reject("调起系统分享失败: " + e.getMessage());
+                    }
+                });
+            } catch (Exception e) {
+                call.reject("生成分享文件失败: " + e.getMessage());
+            }
+        }).start();
     }
 
     private void installApkInternal(File apkFile, PluginCall call) {

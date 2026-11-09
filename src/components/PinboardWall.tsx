@@ -12,6 +12,8 @@ import {
   ZoomIn,
   ZoomOut,
   Dices,
+  Lock,
+  LockOpen,
 } from "lucide-react";
 import { MemoryCard, PaperColor } from "@/types/memory";
 import { triggerHaptic } from "@/utils/storageDb";
@@ -190,6 +192,7 @@ export default function PinboardWall({
   const [zoom, setZoom] = useState(0.92);
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
   const [isArranging, setIsArranging] = useState(false);
+  const [isBoardLocked, setIsBoardLocked] = useState(false);
   const [spotlightId, setSpotlightId] = useState<string | null>(null);
   const [pinRipple, setPinRipple] = useState<{ x: number; y: number } | null>(
     null
@@ -378,7 +381,8 @@ export default function PinboardWall({
 
   // 将屏幕点击坐标转换为墙面 (boardX, boardY) 坐标并在原处钉新便签
   const triggerPinAtScreenPoint = (clientX: number, clientY: number) => {
-    if (!onDoubleClickWall || typeof window === "undefined") return;
+    if (isBoardLocked || !onDoubleClickWall || typeof window === "undefined")
+      return;
     triggerHaptic([10, 30, 10]);
     const boardX = Math.round(
       (clientX - window.innerWidth / 2 - panRef.current.x) / zoomRef.current
@@ -750,12 +754,14 @@ export default function PinboardWall({
               ref={(el) => {
                 cardElsRef.current[card.id] = el;
               }}
-              onTouchStart={(e) =>
-                beginCardDrag(e, card.id, pos.x, pos.y, pos.rotation)
-              }
-              onMouseDown={(e) =>
-                beginCardDrag(e, card.id, pos.x, pos.y, pos.rotation)
-              }
+              onTouchStart={(e) => {
+                if (isBoardLocked) return;
+                beginCardDrag(e, card.id, pos.x, pos.y, pos.rotation);
+              }}
+              onMouseDown={(e) => {
+                if (isBoardLocked) return;
+                beginCardDrag(e, card.id, pos.x, pos.y, pos.rotation);
+              }}
               style={{
                 transform: `translate3d(${x - 125}px, ${y - 110}px, 0) rotate(${
                   isDraggingThis ? 0 : pos.rotation
@@ -777,6 +783,7 @@ export default function PinboardWall({
                   : 10,
               }}
               onClick={(e) => {
+                if (isBoardLocked) return;
                 e.stopPropagation();
                 if (interactionRef.current.movedDistance > 6) return;
                 triggerHaptic(8);
@@ -787,7 +794,11 @@ export default function PinboardWall({
                   ? "transition-transform duration-300 ease-out"
                   : "transition-opacity duration-150"
               } ${
-                isDraggingThis ? "cursor-grabbing" : "cursor-grab"
+                isBoardLocked
+                  ? "pointer-events-none"
+                  : isDraggingThis
+                  ? "cursor-grabbing"
+                  : "cursor-grab"
               } ${
                 isMatched ? "opacity-100" : "opacity-20 pointer-events-none"
               }`}
@@ -976,13 +987,45 @@ export default function PinboardWall({
         })}
       </div>
 
-      {/* 左下角极简画布罗盘：回中心 / 🎲随机漫步 / 缩放 / 整理墙面 */}
+      {/* 左下角极简画布罗盘：锁定纯滑动模式 / 回中心 / 🎲随机漫步 / 缩放 / 整理墙面 */}
       <div
         onClick={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
-        className="fixed bottom-6 left-4 z-30 pb-safe flex items-center gap-1.5"
+        className="fixed bottom-6 left-4 z-30 pb-safe flex items-center gap-1.5 flex-wrap"
       >
+        {/* 独立看板锁定按钮：开启后触碰便签不点开详情、不挪动单张便签，全屏纯粹顺滑滑动 */}
+        <button
+          type="button"
+          onClick={() => {
+            triggerHaptic(10);
+            setIsBoardLocked((prev) => !prev);
+            setDraggingCardId(null);
+          }}
+          title={
+            isBoardLocked
+              ? "当前为纯滑动模式（点击解锁便签交互）"
+              : "锁定看板（开启后触碰便签不打开详情、不移动单张卡片，全屏顺滑滑动）"
+          }
+          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold border shadow-md transition-all cursor-pointer ${
+            isBoardLocked
+              ? "bg-[#2C251E] text-[#E8C589] border-[#5E5042] ring-2 ring-[#C87D32]/50"
+              : "bg-[#FFFDF8]/92 backdrop-blur-md text-[#4A3F33] border-[#DED2BA] hover:bg-[#EFE7D6]"
+          }`}
+        >
+          {isBoardLocked ? (
+            <>
+              <Lock className="w-3.5 h-3.5 text-[#E8C589]" />
+              <span>仅滑动中</span>
+            </>
+          ) : (
+            <>
+              <LockOpen className="w-3.5 h-3.5 text-[#C87D32]" />
+              <span>锁定滑动</span>
+            </>
+          )}
+        </button>
+
         <div className="flex items-center bg-[#FFFDF8]/90 backdrop-blur-md border border-[#DED2BA] rounded-full p-1 shadow-md">
           <button
             type="button"
