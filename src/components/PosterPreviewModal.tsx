@@ -171,11 +171,11 @@ export default function PosterPreviewModal() {
   return (
     <div
       onClick={() => setPoster(null)}
-      className="fixed inset-0 z-[70] bg-[#1E1711]/75 backdrop-blur-xs flex items-center justify-center p-4"
+      className="fixed inset-0 z-[70] bg-[#1E1711]/75 backdrop-blur-xs flex items-center justify-center p-4 modal-backdrop-enter"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-3xl bg-[#FBF6E9] border border-[#DFD2BA] paper-shadow overflow-hidden flex flex-col max-h-[92vh]"
+        className="w-full max-w-md rounded-3xl bg-[#FBF6E9] border border-[#DFD2BA] paper-shadow overflow-hidden flex flex-col max-h-[92vh] modal-pop-enter"
       >
         {/* 顶栏 */}
         <div className="px-5 py-3.5 bg-[#F4ECE0] border-b border-[#E5D8C1] flex items-center justify-between">

@@ -529,10 +529,16 @@ export default function PinboardWall({
     }[] = [];
     const seenPairs = new Set<string>();
 
-    // 1. 用户手动关联的思维连线（支持每条连线独立选色）
+    // 1. 用户手动关联的思维连线（支持每条连线独立选色；存在筛选时仅保留两端均命中的连线）
     for (const { card } of positionedCards) {
       const linked = card.linkedCardIds || [];
       for (const targetId of linked) {
+        if (
+          hasActiveFilter &&
+          (!matchedIds.has(card.id) || !matchedIds.has(targetId))
+        ) {
+          continue;
+        }
         const pairKey =
           card.id < targetId
             ? `${card.id}::${targetId}`
@@ -560,10 +566,11 @@ export default function PinboardWall({
       }
     }
 
-    // 2. 同标签共鸣麻绳连线（当开启 "all" 模式或当前激活了某个 #标签 筛选时展示）
+    // 2. 同标签共鸣麻绳连线（当开启 "all" 模式时展示；存在筛选时仅连接命中的便签）
     if (threadMode === "all") {
       const tagGroups: Record<string, string[]> = {};
       for (const { card } of positionedCards) {
+        if (hasActiveFilter && !matchedIds.has(card.id)) continue;
         for (const t of card.tags) {
           if (activeTag && t !== activeTag) continue;
           if (!tagGroups[t]) tagGroups[t] = [];
@@ -598,7 +605,15 @@ export default function PinboardWall({
     }
 
     return threads;
-  }, [positionedCards, cardLiveCoordsMap, threadMode, activeTag, linkingFromCardId]);
+  }, [
+    positionedCards,
+    cardLiveCoordsMap,
+    threadMode,
+    activeTag,
+    hasActiveFilter,
+    matchedIds,
+    linkingFromCardId,
+  ]);
 
   useEffect(() => {
     if (centerTrigger > 0) {
@@ -1374,23 +1389,6 @@ export default function PinboardWall({
                       strokeLinecap="round"
                     />
                   )}
-                  {/* 两端图钉绕线环结 */}
-                  <circle
-                    cx={t.x1}
-                    cy={t.y1}
-                    r={isManual ? 5 : 3.8}
-                    fill="none"
-                    stroke={colorStyle.stroke}
-                    strokeWidth={isManual ? 1.9 : 1.4}
-                  />
-                  <circle
-                    cx={t.x2}
-                    cy={t.y2}
-                    r={isManual ? 5 : 3.8}
-                    fill="none"
-                    stroke={colorStyle.stroke}
-                    strokeWidth={isManual ? 1.9 : 1.4}
-                  />
                   {/* 手动连线的透明宽触控区：点击连线即可弹出 5 色调色盘或解绑 */}
                   {isManual && !isBoardLocked && (
                     <path

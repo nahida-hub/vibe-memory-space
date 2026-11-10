@@ -237,3 +237,131 @@ html[data-theme="night_lamp"] .polaroid-shadow {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(150, 132, 108, 0.7);
 }
+
+/* ========== 全局丝滑过渡与弹窗/视图动画 ========== */
+@keyframes backdropFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes backdropFadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes sheetSlideUp {
+  from {
+    opacity: 0.4;
+    transform: translate3d(0, 100%, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes sheetSlideDown {
+  from {
+    opacity: 1;
+    transform: translate3d(0, var(--sheet-drag-y, 0px), 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, 104%, 0);
+  }
+}
+
+@keyframes centerModalPopIn {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+}
+
+@keyframes centerModalPopOut {
+  from {
+    opacity: 1;
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95) translate3d(0, 12px, 0);
+  }
+}
+
+@keyframes viewSmoothFadeIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes filterBarSlideDown {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.modal-backdrop-enter {
+  animation: backdropFadeIn 0.24s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.modal-backdrop-exit {
+  animation: backdropFadeOut 0.2s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+.modal-sheet-enter {
+  animation: sheetSlideUp 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  will-change: transform, opacity;
+}
+
+.modal-sheet-exit {
+  animation: sheetSlideDown 0.21s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@media (min-width: 640px) {
+  .modal-sheet-enter {
+    animation: centerModalPopIn 0.26s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  .modal-sheet-exit {
+    animation: centerModalPopOut 0.19s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+  }
+}
+
+.modal-pop-enter {
+  animation: centerModalPopIn 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.modal-pop-exit {
+  animation: centerModalPopOut 0.18s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+.view-transition-enter {
+  animation: viewSmoothFadeIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.filter-bar-enter {
+  animation: filterBarSlideDown 0.22s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}

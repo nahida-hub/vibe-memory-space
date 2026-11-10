@@ -1,9 +1,9 @@
 {
   "name": "vibe-memory-space",
-  "version": "0.2.5",
-  "versionCode": 7,
+  "version": "0.2.6",
+  "versionCode": 8,
   "githubRepo": "nahida-hub/vibe-memory-space",
-  "releaseNotes": "v0.2.5 更新：1. 便签思维连线升级为 5 色双股棉绳（朱砂红 / 琥珀麻 / 鼠尾草绿 / 黛蓝 / 焦糖棕），牵线时可选色，点击已有连线或详情页即可随时换色与解绑；2. 移除连线中点文字标签，改用仿真双股捻纹高光与图钉绕线环结，画面更纯净。",
+  "releaseNotes": "v0.2.6 更新：1. 全部抽屉弹窗（便签详情 / 新建编辑 / 设置 / AI 回顾）新增手势下拉跟手关闭与橡皮筋阻尼回弹；2. 新增全局丝滑出入场过渡动画（抽屉滑入滑出、中心弹窗缩放、便签墙/瀑布流视图切换及筛选栏渐显），兼容 Android 返回键平滑退场。",
   "private": true,
   "scripts": {
     "dev": "next dev",

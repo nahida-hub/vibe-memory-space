@@ -696,7 +696,7 @@ export default function HomePage() {
 
           {/* 当点击搜索框或存在过滤条件时，浮现轻量分类与高频标签点选池 */}
           {(isSearchFocused || hasActiveFilter) && (
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pointer-events-auto py-0.5">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pointer-events-auto py-0.5 filter-bar-enter">
               {(
                 [
                   { id: "all", label: "全部" },
@@ -758,32 +758,37 @@ export default function HomePage() {
 
       {/* 主视图：默认 2D 四面八方自由滑动便签墙，或在设置中切换为瀑布流 */}
       {layoutMode === "wall" ? (
-        <PinboardWall
-          memories={memories}
-          matchedIds={matchedIds}
-          hasActiveFilter={hasActiveFilter}
-          activeTag={activeTag}
-          themeMode={themeMode}
-          linkingFromCardId={linkingFromCardId}
-          onCancelLinking={() => setLinkingFromCardId(null)}
-          onToggleLinkCard={handleToggleLinkCard}
-          onUpdatePairThreadColor={handleUpdatePairThreadColor}
-          onSelectCard={(card) => setSelectedCard(card)}
-          onTagClick={(tag) => setActiveTag(activeTag === tag ? null : tag)}
-          onUpdateCardPosition={handleUpdateCardPosition}
-          onAutoArrangeWall={handleAutoArrangeWall}
-          onOpenAiReview={() => setIsAiReviewOpen(true)}
-          focusCardRequest={focusCardRequest}
-          onDoubleClickWall={(boardX, boardY) => {
-            setEditingCard(null);
-            setPendingBoardPos({ x: boardX, y: boardY });
-            setCaptureInitialType("ai_insight");
-            setIsCaptureOpen(true);
-          }}
-          centerTrigger={centerTrigger}
-        />
+        <div key="view-wall" className="view-transition-enter">
+          <PinboardWall
+            memories={memories}
+            matchedIds={matchedIds}
+            hasActiveFilter={hasActiveFilter}
+            activeTag={activeTag}
+            themeMode={themeMode}
+            linkingFromCardId={linkingFromCardId}
+            onCancelLinking={() => setLinkingFromCardId(null)}
+            onToggleLinkCard={handleToggleLinkCard}
+            onUpdatePairThreadColor={handleUpdatePairThreadColor}
+            onSelectCard={(card) => setSelectedCard(card)}
+            onTagClick={(tag) => setActiveTag(activeTag === tag ? null : tag)}
+            onUpdateCardPosition={handleUpdateCardPosition}
+            onAutoArrangeWall={handleAutoArrangeWall}
+            onOpenAiReview={() => setIsAiReviewOpen(true)}
+            focusCardRequest={focusCardRequest}
+            onDoubleClickWall={(boardX, boardY) => {
+              setEditingCard(null);
+              setPendingBoardPos({ x: boardX, y: boardY });
+              setCaptureInitialType("ai_insight");
+              setIsCaptureOpen(true);
+            }}
+            centerTrigger={centerTrigger}
+          />
+        </div>
       ) : (
-        <main className="max-w-5xl mx-auto px-4 pt-20 pb-28">
+        <main
+          key="view-masonry"
+          className="max-w-5xl mx-auto px-4 pt-20 pb-28 view-transition-enter"
+        >
           <section className="columns-1 md:columns-2 lg:columns-3 gap-4 space-y-4">
             {filteredMemories.map((card) => (
               <div key={card.id} className="break-inside-avoid">

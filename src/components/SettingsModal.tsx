@@ -29,6 +29,7 @@ import { LayoutMode, MemoryCard, ThemeMode } from "@/types/memory";
 import { testAiConnection } from "@/utils/aiClient";
 import { triggerHaptic } from "@/utils/storageDb";
 import { sanitizeImportedMemories } from "@/utils/security";
+import { useSheetDismiss } from "@/utils/useSheetDismiss";
 import {
   UpdateConfig,
   RemoteReleaseInfo,
@@ -104,6 +105,18 @@ export default function SettingsModal({
   } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
+
+  const {
+    shouldRender,
+    isClosing,
+    dragY,
+    requestClose,
+    headerDragProps,
+    createScrollBodyPullProps,
+    sheetMotionStyle,
+    backdropMotionStyle,
+  } = useSheetDismiss({ isOpen, onClose });
 
   useEffect(() => {
     if (isOpen) {
@@ -125,7 +138,7 @@ export default function SettingsModal({
     }
   }, [isOpen, aiConfig]);
 
-  if (!isOpen) return null;
+  if (!shouldRender) return null;
 
   const currentPreset = AI_PROVIDER_PRESETS.find(
     (p) => p.name === draft.providerName
@@ -213,57 +226,79 @@ export default function SettingsModal({
 
   return (
     <div
-      onClick={onClose}
-      className="fixed inset-0 z-50 bg-[#261E16]/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+      onClick={() => requestClose()}
+      style={backdropMotionStyle}
+      className={`fixed inset-0 z-50 bg-[#261E16]/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 ${
+        isClosing ? "modal-backdrop-exit" : "modal-backdrop-enter"
+      }`}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-t-3xl sm:rounded-3xl bg-[#FBF6E9] border border-[#DFD2BA] paper-shadow overflow-hidden max-h-[88vh] flex flex-col"
+        style={sheetMotionStyle}
+        className={`w-full max-w-lg rounded-t-3xl sm:rounded-3xl bg-[#FBF6E9] border border-[#DFD2BA] paper-shadow overflow-hidden max-h-[88vh] flex flex-col ${
+          isClosing
+            ? "modal-sheet-exit"
+            : dragY === 0
+            ? "modal-sheet-enter"
+            : ""
+        }`}
       >
-        {/* 顶栏与 Tab 切换 */}
-        <div className="px-5 py-3.5 border-b border-[#E6DBC6] flex items-center justify-between bg-[#F5EDE0]">
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-[#EAE0CE]">
+        {/* 顶部下拉关闭区域 + 顶栏与 Tab 切换 */}
+        <div
+          {...headerDragProps}
+          className="border-b border-[#E6DBC6] bg-[#F5EDE0] select-none touch-none"
+        >
+          <div className="pt-2.5 pb-1 flex flex-col items-center justify-center cursor-grab active:cursor-grabbing">
+            <div className="w-10 h-1.5 rounded-full bg-[#C8BCA8]/85" />
+          </div>
+          <div className="px-5 pb-3 pt-1 flex items-center justify-between">
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-[#EAE0CE]">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(6);
+                  setActiveTab("general");
+                }}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  activeTab === "general"
+                    ? "bg-[#FFFDF8] text-[#2C251E] shadow-2xs"
+                    : "text-[#6E6050]"
+                }`}
+              >
+                通用与备份
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(6);
+                  setActiveTab("ai");
+                }}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  activeTab === "ai"
+                    ? "bg-[#FFFDF8] text-[#2C251E] shadow-2xs"
+                    : "text-[#6E6050]"
+                }`}
+              >
+                AI 接口设置
+              </button>
+            </div>
+
             <button
               type="button"
-              onClick={() => {
-                triggerHaptic(6);
-                setActiveTab("general");
-              }}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                activeTab === "general"
-                  ? "bg-[#FFFDF8] text-[#2C251E] shadow-2xs"
-                  : "text-[#6E6050]"
-              }`}
+              onClick={() => requestClose()}
+              className="p-2 rounded-full text-[#7E7060] hover:text-[#2C251E] hover:bg-[#EAE0CC] transition-colors cursor-pointer"
             >
-              通用与备份
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic(6);
-                setActiveTab("ai");
-              }}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                activeTab === "ai"
-                  ? "bg-[#FFFDF8] text-[#2C251E] shadow-2xs"
-                  : "text-[#6E6050]"
-              }`}
-            >
-              AI 接口设置
+              <X className="w-5 h-5" />
             </button>
           </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-full text-[#7E7060] hover:text-[#2C251E] hover:bg-[#EAE0CC] transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
         {/* 内容区 */}
-        <div className="p-5 sm:p-6 overflow-y-auto space-y-5 pb-safe">
+        <div
+          ref={bodyScrollRef}
+          {...createScrollBodyPullProps(bodyScrollRef)}
+          className="p-5 sm:p-6 overflow-y-auto space-y-5 pb-safe"
+        >
           {notice && (
             <div className="p-3 rounded-xl bg-[#E8F2E5] border border-[#C6D8C0] text-xs text-[#3B5935] flex items-center gap-2 font-medium">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
@@ -272,7 +307,7 @@ export default function SettingsModal({
           )}
 
           {activeTab === "general" ? (
-            <div className="space-y-4">
+            <div key="tab-general" className="space-y-4 view-transition-enter">
               {/* 视图与氛围主题模式 */}
               <div className="p-4 rounded-2xl bg-[#FFFDF8] border border-[#E2D6BE] space-y-3">
                 <div className="text-xs font-semibold text-[#3F3428]">
@@ -564,7 +599,7 @@ export default function SettingsModal({
                   type="button"
                   onClick={() => {
                     onResetDemo();
-                    onClose();
+                    requestClose();
                   }}
                   className="inline-flex items-center gap-1 text-xs text-[#8C7E6D] hover:text-red-700 cursor-pointer"
                 >
@@ -574,7 +609,11 @@ export default function SettingsModal({
               </div>
             </div>
           ) : (
-            <form onSubmit={handleSaveAi} className="space-y-4">
+            <form
+              key="tab-ai"
+              onSubmit={handleSaveAi}
+              className="space-y-4 view-transition-enter"
+            >
               {/* 服务商预设 */}
               <div>
                 <label className="block text-xs font-semibold text-[#5E5244] mb-1.5">

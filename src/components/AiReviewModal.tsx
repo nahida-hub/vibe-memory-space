@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import {
   X,
   Sparkles,
@@ -22,6 +22,7 @@ import {
 } from "@/utils/aiClient";
 import { exportCardAsPolaroidImage } from "@/utils/posterExport";
 import { triggerHaptic } from "@/utils/storageDb";
+import { useSheetDismiss } from "@/utils/useSheetDismiss";
 
 interface AiReviewModalProps {
   isOpen: boolean;
@@ -94,7 +95,20 @@ export default function AiReviewModal({
     return "全部手账记忆";
   }, [scope, selectedTag]);
 
-  if (!isOpen) return null;
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
+
+  const {
+    shouldRender,
+    isClosing,
+    dragY,
+    requestClose,
+    headerDragProps,
+    createScrollBodyPullProps,
+    sheetMotionStyle,
+    backdropMotionStyle,
+  } = useSheetDismiss({ isOpen, onClose });
+
+  if (!shouldRender) return null;
 
   const handleGenerate = async () => {
     if (scopedCards.length === 0 || isGenerating) return;
@@ -135,7 +149,7 @@ export default function AiReviewModal({
     setHasPinned(true);
     onPinReviewToWall(newCard);
     setTimeout(() => {
-      onClose();
+      requestClose();
     }, 350);
   };
 
@@ -150,37 +164,59 @@ export default function AiReviewModal({
 
   return (
     <div
-      onClick={onClose}
-      className="fixed inset-0 z-50 bg-[#261E16]/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+      onClick={() => requestClose()}
+      style={backdropMotionStyle}
+      className={`fixed inset-0 z-50 bg-[#261E16]/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 ${
+        isClosing ? "modal-backdrop-exit" : "modal-backdrop-enter"
+      }`}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-t-3xl sm:rounded-3xl bg-[#FBF6E9] border border-[#DFD2BA] paper-shadow overflow-hidden max-h-[90vh] flex flex-col"
+        style={sheetMotionStyle}
+        className={`w-full max-w-lg rounded-t-3xl sm:rounded-3xl bg-[#FBF6E9] border border-[#DFD2BA] paper-shadow overflow-hidden max-h-[90vh] flex flex-col ${
+          isClosing
+            ? "modal-sheet-exit"
+            : dragY === 0
+            ? "modal-sheet-enter"
+            : ""
+        }`}
       >
-        {/* 顶栏 */}
-        <div className="px-5 py-3.5 border-b border-[#E6DBC6] flex items-center justify-between bg-[#F3ECE0]">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl bg-[#496044] text-[#FBF6E9] flex items-center justify-center">
-              <BookOpen className="w-3.5 h-3.5" />
-            </div>
-            <div>
-              <h2 className="font-serif-notebook text-sm sm:text-base font-bold text-[#2C251E]">
-                AI 翻阅手账 · 阶段洞察周报
-              </h2>
-            </div>
+        {/* 顶部下拉关闭区域 + 顶栏 */}
+        <div
+          {...headerDragProps}
+          className="border-b border-[#E6DBC6] bg-[#F3ECE0] select-none touch-none"
+        >
+          <div className="pt-2.5 pb-1 flex flex-col items-center justify-center cursor-grab active:cursor-grabbing">
+            <div className="w-10 h-1.5 rounded-full bg-[#C8BCA8]/85" />
           </div>
+          <div className="px-5 pb-3 pt-1 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-xl bg-[#496044] text-[#FBF6E9] flex items-center justify-center">
+                <BookOpen className="w-3.5 h-3.5" />
+              </div>
+              <div>
+                <h2 className="font-serif-notebook text-sm sm:text-base font-bold text-[#2C251E]">
+                  AI 翻阅手账 · 阶段洞察周报
+                </h2>
+              </div>
+            </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-full text-[#7E7060] hover:text-[#2C251E] hover:bg-[#EAE0CC] transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+            <button
+              type="button"
+              onClick={() => requestClose()}
+              className="p-1.5 rounded-full text-[#7E7060] hover:text-[#2C251E] hover:bg-[#EAE0CC] transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* 主体 */}
-        <div className="p-5 overflow-y-auto space-y-4 pb-safe">
+        <div
+          ref={bodyScrollRef}
+          {...createScrollBodyPullProps(bodyScrollRef)}
+          className="p-5 overflow-y-auto space-y-4 pb-safe"
+        >
           {/* 范围选择 */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-[#6E6050]">

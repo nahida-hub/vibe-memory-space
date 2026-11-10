@@ -20,6 +20,7 @@ import { AiConfig } from "@/types/aiConfig";
 import { callAiDistill, callAiPolishAndTag } from "@/utils/aiClient";
 import { PAPER_COLOR_STYLES } from "@/components/PinboardWall";
 import { compressImageForGallery, triggerHaptic } from "@/utils/storageDb";
+import { useSheetDismiss } from "@/utils/useSheetDismiss";
 
 const CAPTURE_DRAFT_STORAGE_KEY = "vibe_memory_capture_draft_v1";
 
@@ -108,6 +109,20 @@ export default function QuickCaptureModal({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const datePickerRef = useRef<HTMLInputElement>(null);
+  const formScrollRef = useRef<HTMLFormElement>(null);
+
+  const {
+    shouldRender,
+    isClosing,
+    requestClose,
+    headerDragProps,
+    createScrollBodyPullProps,
+    sheetMotionStyle,
+    backdropMotionStyle,
+  } = useSheetDismiss({
+    isOpen,
+    onClose,
+  });
 
   // 打开弹窗时初始化：若是编辑模式则载入原卡片；若是新建模式则优先检查是否有未保存草稿
   useEffect(() => {
@@ -279,7 +294,7 @@ export default function QuickCaptureModal({
       .filter(Boolean);
   }, [tagsInput]);
 
-  if (!isOpen) return null;
+  if (!shouldRender) return null;
 
   const handleClearDraft = () => {
     triggerHaptic(8);
@@ -458,6 +473,12 @@ export default function QuickCaptureModal({
       boardY: editingCard ? editingCard.boardY : pendingBoardPos?.y,
       rotation: editingCard?.rotation,
       paperColor,
+      ...(editingCard?.linkedCardIds
+        ? { linkedCardIds: editingCard.linkedCardIds }
+        : {}),
+      ...(editingCard?.linkedCardColors
+        ? { linkedCardColors: editingCard.linkedCardColors }
+        : {}),
       ...(cardType === "ai_insight" && {
         summary: finalSummary,
         aiModel: finalModel,
@@ -483,59 +504,75 @@ export default function QuickCaptureModal({
 
     onSaveCard(savedCard, Boolean(editingCard));
     setIsSubmitting(false);
-    onClose();
+    requestClose();
   };
 
   return (
     <div
-      onClick={onClose}
-      className="fixed inset-0 z-50 bg-[#261E16]/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+      onClick={() => requestClose()}
+      style={backdropMotionStyle}
+      className={`fixed inset-0 z-50 bg-[#261E16]/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 ${
+        isClosing ? "modal-backdrop-exit" : "modal-backdrop-enter"
+      }`}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-t-3xl sm:rounded-3xl bg-[#FBF6E9] border border-[#DFD2BA] paper-shadow overflow-hidden max-h-[92vh] flex flex-col"
+        style={sheetMotionStyle}
+        className={`w-full max-w-lg rounded-t-3xl sm:rounded-3xl bg-[#FBF6E9] border border-[#DFD2BA] paper-shadow overflow-hidden max-h-[92vh] flex flex-col ${
+          isClosing ? "modal-sheet-exit" : "modal-sheet-enter"
+        }`}
       >
-        {/* 顶栏 */}
-        <div className="px-5 py-3.5 border-b border-[#E6DBC6] flex items-center justify-between bg-[#F6EFE0]">
-          <div className="flex items-center gap-2">
-            <h2 className="font-serif-notebook text-base font-bold text-[#2C251E]">
-              {editingCard ? "编辑便签" : "钉一张新便签"}
-            </h2>
-            {!editingCard && restoredFromDraft && (
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#E8EFE5] text-[#496044] font-medium">
-                已恢复草稿
-              </span>
-            )}
+        {/* 顶栏（支持按住下拉关闭） */}
+        <div
+          {...headerDragProps}
+          className="border-b border-[#E6DBC6] bg-[#F6EFE0] select-none touch-none cursor-grab active:cursor-grabbing"
+        >
+          <div className="pt-2.5 pb-0.5 flex justify-center">
+            <div className="w-10 h-1.5 rounded-full bg-[#C4B49D]/70" />
           </div>
-
-          <div className="flex items-center gap-1">
-            {!editingCard &&
-              (rawContent.trim() ||
-                title.trim() ||
-                summary.trim() ||
-                images.length > 0) && (
-                <button
-                  type="button"
-                  onClick={handleClearDraft}
-                  title="清空当前草稿重写"
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] text-[#7E7060] hover:text-red-700 hover:bg-[#EAE0CC] transition-colors cursor-pointer"
-                >
-                  <Trash2 className="w-3 h-3" />
-                  <span>清空</span>
-                </button>
+          <div className="px-5 pb-3 pt-1 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <h2 className="font-serif-notebook text-base font-bold text-[#2C251E]">
+                {editingCard ? "编辑便签" : "钉一张新便签"}
+              </h2>
+              {!editingCard && restoredFromDraft && (
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#E8EFE5] text-[#496044] font-medium">
+                  已恢复草稿
+                </span>
               )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-full text-[#7E7060] hover:text-[#2C251E] hover:bg-[#EAE0CC] transition-colors cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            </div>
+
+            <div className="flex items-center gap-1">
+              {!editingCard &&
+                (rawContent.trim() ||
+                  title.trim() ||
+                  summary.trim() ||
+                  images.length > 0) && (
+                  <button
+                    type="button"
+                    onClick={handleClearDraft}
+                    title="清空当前草稿重写"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] text-[#7E7060] hover:text-red-700 hover:bg-[#EAE0CC] transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>清空</span>
+                  </button>
+                )}
+              <button
+                type="button"
+                onClick={() => requestClose()}
+                className="p-1.5 rounded-full text-[#7E7060] hover:text-[#2C251E] hover:bg-[#EAE0CC] transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
 
         {/* 表单 */}
         <form
+          ref={formScrollRef}
+          {...createScrollBodyPullProps(formScrollRef)}
           onSubmit={handleSubmit}
           className="p-5 overflow-y-auto space-y-4 pb-safe"
         >
