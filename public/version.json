@@ -1,7 +1,7 @@
 {
-  "versionName": "0.2.6",
-  "versionCode": 8,
+  "versionName": "0.2.7",
+  "versionCode": 9,
   "publishedAt": "2026-11-10",
-  "releaseNotes": "v0.2.6 更新：1. 全部抽屉弹窗（便签详情 / 新建编辑 / 设置 / AI 回顾）新增手势下拉跟手关闭与橡皮筋阻尼回弹；2. 新增全局丝滑出入场过渡动画（抽屉滑入滑出、中心弹窗缩放、便签墙/瀑布流视图切换及筛选栏渐显），兼容 Android 返回键平滑退场。",
-  "apkUrl": "https://github.com/nahida-hub/vibe-memory-space/releases/download/v0.2.6/记忆手账.apk"
+  "releaseNotes": "v0.2.7 更新：1. 紧急修复 v0.2.6 因外层过渡动画 transform 导致便签墙容器高度坍缩（便签不显示，本地数据完好无损）的问题；2. 优化抽屉弹窗手势下拉与回弹动画衔接。",
+  "apkUrl": "https://github.com/nahida-hub/vibe-memory-space/releases/download/v0.2.7/记忆手账.apk"
 }

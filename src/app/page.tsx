@@ -758,32 +758,30 @@ export default function HomePage() {
 
       {/* 主视图：默认 2D 四面八方自由滑动便签墙，或在设置中切换为瀑布流 */}
       {layoutMode === "wall" ? (
-        <div key="view-wall" className="view-transition-enter">
-          <PinboardWall
-            memories={memories}
-            matchedIds={matchedIds}
-            hasActiveFilter={hasActiveFilter}
-            activeTag={activeTag}
-            themeMode={themeMode}
-            linkingFromCardId={linkingFromCardId}
-            onCancelLinking={() => setLinkingFromCardId(null)}
-            onToggleLinkCard={handleToggleLinkCard}
-            onUpdatePairThreadColor={handleUpdatePairThreadColor}
-            onSelectCard={(card) => setSelectedCard(card)}
-            onTagClick={(tag) => setActiveTag(activeTag === tag ? null : tag)}
-            onUpdateCardPosition={handleUpdateCardPosition}
-            onAutoArrangeWall={handleAutoArrangeWall}
-            onOpenAiReview={() => setIsAiReviewOpen(true)}
-            focusCardRequest={focusCardRequest}
-            onDoubleClickWall={(boardX, boardY) => {
-              setEditingCard(null);
-              setPendingBoardPos({ x: boardX, y: boardY });
-              setCaptureInitialType("ai_insight");
-              setIsCaptureOpen(true);
-            }}
-            centerTrigger={centerTrigger}
-          />
-        </div>
+        <PinboardWall
+          memories={memories}
+          matchedIds={matchedIds}
+          hasActiveFilter={hasActiveFilter}
+          activeTag={activeTag}
+          themeMode={themeMode}
+          linkingFromCardId={linkingFromCardId}
+          onCancelLinking={() => setLinkingFromCardId(null)}
+          onToggleLinkCard={handleToggleLinkCard}
+          onUpdatePairThreadColor={handleUpdatePairThreadColor}
+          onSelectCard={(card) => setSelectedCard(card)}
+          onTagClick={(tag) => setActiveTag(activeTag === tag ? null : tag)}
+          onUpdateCardPosition={handleUpdateCardPosition}
+          onAutoArrangeWall={handleAutoArrangeWall}
+          onOpenAiReview={() => setIsAiReviewOpen(true)}
+          focusCardRequest={focusCardRequest}
+          onDoubleClickWall={(boardX, boardY) => {
+            setEditingCard(null);
+            setPendingBoardPos({ x: boardX, y: boardY });
+            setCaptureInitialType("ai_insight");
+            setIsCaptureOpen(true);
+          }}
+          centerTrigger={centerTrigger}
+        />
       ) : (
         <main
           key="view-masonry"

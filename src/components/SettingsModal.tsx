@@ -236,11 +236,7 @@ export default function SettingsModal({
         onClick={(e) => e.stopPropagation()}
         style={sheetMotionStyle}
         className={`w-full max-w-lg rounded-t-3xl sm:rounded-3xl bg-[#FBF6E9] border border-[#DFD2BA] paper-shadow overflow-hidden max-h-[88vh] flex flex-col ${
-          isClosing
-            ? "modal-sheet-exit"
-            : dragY === 0
-            ? "modal-sheet-enter"
-            : ""
+          isClosing ? "modal-sheet-exit" : "modal-sheet-enter"
         }`}
       >
         {/* 顶部下拉关闭区域 + 顶栏与 Tab 切换 */}

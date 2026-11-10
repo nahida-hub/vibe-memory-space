@@ -324,7 +324,7 @@ html[data-theme="night_lamp"] .polaroid-shadow {
 }
 
 .modal-backdrop-enter {
-  animation: backdropFadeIn 0.24s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: backdropFadeIn 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .modal-backdrop-exit {
@@ -332,7 +332,7 @@ html[data-theme="night_lamp"] .polaroid-shadow {
 }
 
 .modal-sheet-enter {
-  animation: sheetSlideUp 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: sheetSlideUp 0.32s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform, opacity;
 }
 
@@ -343,7 +343,7 @@ html[data-theme="night_lamp"] .polaroid-shadow {
 
 @media (min-width: 640px) {
   .modal-sheet-enter {
-    animation: centerModalPopIn 0.26s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    animation: centerModalPopIn 0.26s cubic-bezier(0.22, 1, 0.36, 1);
   }
   .modal-sheet-exit {
     animation: centerModalPopOut 0.19s cubic-bezier(0.32, 0.72, 0, 1) forwards;
@@ -351,7 +351,7 @@ html[data-theme="night_lamp"] .polaroid-shadow {
 }
 
 .modal-pop-enter {
-  animation: centerModalPopIn 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: centerModalPopIn 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .modal-pop-exit {
@@ -359,9 +359,9 @@ html[data-theme="night_lamp"] .polaroid-shadow {
 }
 
 .view-transition-enter {
-  animation: viewSmoothFadeIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: viewSmoothFadeIn 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .filter-bar-enter {
-  animation: filterBarSlideDown 0.22s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: filterBarSlideDown 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
