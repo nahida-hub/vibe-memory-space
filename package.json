@@ -1,9 +1,9 @@
 {
   "name": "vibe-memory-space",
-  "version": "0.2.3",
-  "versionCode": 5,
+  "version": "0.2.4",
+  "versionCode": 6,
   "githubRepo": "nahida-hub/vibe-memory-space",
-  "releaseNotes": "v0.2.3 更新：1. 修复应用内更新下载进度条卡在 0% 的问题：升级为多镜像节点自动故障切换（gh-proxy / ghfast / ghproxy / 直连），下载中点击「切换通道」可立即中断重连；2. 修复右下角按钮与左下角工具栏重叠问题；3. 解除便签墙缩小下限，支持以视野中心为锚点持续无限缩小俯瞰全局。",
+  "releaseNotes": "v0.2.4 更新：1. 新增「深夜台灯模式」暖光暗色主题，可在设置中一键切换并自动记忆；2. 新增便签「思维红线」关联：详情页一键牵线，墙面实时绘制红线/同标签麻绳连线，可跳转与解除关联；3. 分享海报新增 3 种版式（经典拍立得 / 电影感日签 / 展览纪念票根）；4. 便签墙新增桌面分区铭牌。",
   "private": true,
   "scripts": {
     "dev": "next dev",

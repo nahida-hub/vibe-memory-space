@@ -15,6 +15,8 @@ import {
   Compass,
   Smartphone,
   RefreshCw,
+  Sun,
+  Moon,
 } from "lucide-react";
 import {
   AiConfig,
@@ -23,7 +25,7 @@ import {
   DEFAULT_AI_CONFIG,
   DEFAULT_SYSTEM_PROMPT,
 } from "@/types/aiConfig";
-import { LayoutMode, MemoryCard } from "@/types/memory";
+import { LayoutMode, MemoryCard, ThemeMode } from "@/types/memory";
 import { testAiConnection } from "@/utils/aiClient";
 import { triggerHaptic } from "@/utils/storageDb";
 import { sanitizeImportedMemories } from "@/utils/security";
@@ -41,12 +43,14 @@ interface SettingsModalProps {
   isOpen: boolean;
   aiConfig: AiConfig;
   layoutMode: LayoutMode;
+  themeMode?: ThemeMode;
   memories: MemoryCard[];
   canInstallPwa?: boolean;
   onTriggerInstallPwa?: () => void;
   onClose: () => void;
   onSaveAiConfig: (newConfig: AiConfig) => void;
   onChangeLayoutMode: (mode: LayoutMode) => void;
+  onChangeThemeMode?: (mode: ThemeMode) => void;
   onAutoArrangeWall: () => void;
   onImportMemories: (imported: MemoryCard[], mode: "merge" | "replace") => void;
   onResetDemo: () => void;
@@ -60,12 +64,14 @@ export default function SettingsModal({
   isOpen,
   aiConfig,
   layoutMode,
+  themeMode = "daylight",
   memories,
   canInstallPwa = false,
   onTriggerInstallPwa,
   onClose,
   onSaveAiConfig,
   onChangeLayoutMode,
+  onChangeThemeMode,
   onAutoArrangeWall,
   onImportMemories,
   onResetDemo,
@@ -267,10 +273,10 @@ export default function SettingsModal({
 
           {activeTab === "general" ? (
             <div className="space-y-4">
-              {/* 视图模式 */}
+              {/* 视图与氛围主题模式 */}
               <div className="p-4 rounded-2xl bg-[#FFFDF8] border border-[#E2D6BE] space-y-3">
                 <div className="text-xs font-semibold text-[#3F3428]">
-                  展示方式
+                  展示方式与灯光氛围
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -304,6 +310,41 @@ export default function SettingsModal({
                     <span>瀑布流列表</span>
                   </button>
                 </div>
+
+                {onChangeThemeMode && (
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic(8);
+                        onChangeThemeMode("daylight");
+                      }}
+                      className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
+                        themeMode === "daylight"
+                          ? "bg-[#C87D32] text-white border-[#C87D32]"
+                          : "bg-[#F6EFE0] text-[#5E5244] border-[#E2D6BE]"
+                      }`}
+                    >
+                      <Sun className="w-3.5 h-3.5" />
+                      <span>日间暖纸模式</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic(8);
+                        onChangeThemeMode("night_lamp");
+                      }}
+                      className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
+                        themeMode === "night_lamp"
+                          ? "bg-[#2C251E] text-[#E8C589] border-[#5E4A36]"
+                          : "bg-[#F6EFE0] text-[#5E5244] border-[#E2D6BE]"
+                      }`}
+                    >
+                      <Moon className="w-3.5 h-3.5" />
+                      <span>深夜台灯模式</span>
+                    </button>
+                  </div>
+                )}
 
                 {layoutMode === "wall" && (
                   <button

@@ -1,4 +1,4 @@
-import { MemoryCard, PaperColor } from "@/types/memory";
+import { MemoryCard, PaperColor, PosterTemplate } from "@/types/memory";
 
 const PAPER_HEX: Record<
   PaperColor,
@@ -15,6 +15,8 @@ export interface GeneratedPosterPayload {
   dataUrl: string;
   fileName: string;
   title: string;
+  card: MemoryCard;
+  template: PosterTemplate;
 }
 
 export const POSTER_GENERATED_EVENT = "vibe-poster-generated";
@@ -35,7 +37,6 @@ function loadImageElement(src: string): Promise<HTMLImageElement | null> {
     }
     img.onload = () => {
       clearTimeout(timer);
-      // 检查是否因跨域污染 Canvas，若污染则跳过该外链图以保证整张海报能正常导出
       try {
         const testCanvas = document.createElement("canvas");
         testCanvas.width = 1;
@@ -159,24 +160,165 @@ function drawCoverImageCell(
   ctx.restore();
 }
 
-/**
- * 将单张便签渲染为高清拍立得/手账分享卡片图 (1080px 宽，支持 1~4+ 多图拼图排版) 并下载或调用系统分享
- */
-export async function exportCardAsPolaroidImage(
-  card: MemoryCard
-): Promise<boolean> {
-  const canvasWidth = 1080;
-  const padX = 96;
-  const cardWidth = canvasWidth - padX * 2; // 888px
-  const innerPad = 64;
-  const contentWidth = cardWidth - innerPad * 2; // 760px
+function drawPhotoCollage(
+  ctx: CanvasRenderingContext2D,
+  loadedImages: HTMLImageElement[],
+  totalRawCount: number,
+  leftX: number,
+  curY: number,
+  contentWidth: number,
+  photoHeight: number,
+  radius = 18
+) {
+  const imgCount = loadedImages.length;
+  if (imgCount === 0 || photoHeight <= 0) return;
+  const gap = 14;
+  if (imgCount === 1) {
+    drawCoverImageCell(
+      ctx,
+      loadedImages[0],
+      leftX,
+      curY,
+      contentWidth,
+      photoHeight,
+      radius
+    );
+  } else if (imgCount === 2) {
+    const cellW = Math.floor((contentWidth - gap) / 2);
+    drawCoverImageCell(
+      ctx,
+      loadedImages[0],
+      leftX,
+      curY,
+      cellW,
+      photoHeight,
+      radius
+    );
+    drawCoverImageCell(
+      ctx,
+      loadedImages[1],
+      leftX + cellW + gap,
+      curY,
+      cellW,
+      photoHeight,
+      radius
+    );
+  } else if (imgCount === 3) {
+    const topH = Math.floor(photoHeight * 0.56);
+    const botH = photoHeight - topH - gap;
+    const botW = Math.floor((contentWidth - gap) / 2);
+    drawCoverImageCell(
+      ctx,
+      loadedImages[0],
+      leftX,
+      curY,
+      contentWidth,
+      topH,
+      radius
+    );
+    drawCoverImageCell(
+      ctx,
+      loadedImages[1],
+      leftX,
+      curY + topH + gap,
+      botW,
+      botH,
+      radius - 2
+    );
+    drawCoverImageCell(
+      ctx,
+      loadedImages[2],
+      leftX + botW + gap,
+      curY + topH + gap,
+      botW,
+      botH,
+      radius - 2
+    );
+  } else {
+    const cellW = Math.floor((contentWidth - gap) / 2);
+    const cellH = Math.floor((photoHeight - gap) / 2);
+    const extra = Math.max(0, totalRawCount - 4);
+    drawCoverImageCell(
+      ctx,
+      loadedImages[0],
+      leftX,
+      curY,
+      cellW,
+      cellH,
+      radius - 2
+    );
+    drawCoverImageCell(
+      ctx,
+      loadedImages[1],
+      leftX + cellW + gap,
+      curY,
+      cellW,
+      cellH,
+      radius - 2
+    );
+    drawCoverImageCell(
+      ctx,
+      loadedImages[2],
+      leftX,
+      curY + cellH + gap,
+      cellW,
+      cellH,
+      radius - 2
+    );
+    drawCoverImageCell(
+      ctx,
+      loadedImages[3],
+      leftX + cellW + gap,
+      curY + cellH + gap,
+      cellW,
+      cellH,
+      radius - 2,
+      extra
+    );
+  }
+}
 
-  // 预测量文本高度
+function parseDateParts(card: MemoryCard): {
+  yearMonth: string;
+  day: string;
+  weekday: string;
+} {
+  const raw = card.dateLabel || "";
+  const [datePart = "2026.11.09", weekPart = "记忆日签"] = raw
+    .split("·")
+    .map((s) => s.trim());
+  const segs = datePart.split(".");
+  if (segs.length >= 3) {
+    return {
+      yearMonth: `${segs[0]}.${segs[1]}`,
+      day: segs[2].padStart(2, "0"),
+      weekday: weekPart,
+    };
+  }
+  return {
+    yearMonth: "2026.11",
+    day: "09",
+    weekday: weekPart || "日常",
+  };
+}
+
+/**
+ * 根据指定版式 ("polaroid" | "cinema" | "ticket") 渲染高清海报并返回 PNG DataURL
+ */
+export async function renderPosterDataUrl(
+  card: MemoryCard,
+  template: PosterTemplate = "polaroid"
+): Promise<string | null> {
+  const canvasWidth = 1080;
+  const padX = 92;
+  const cardWidth = canvasWidth - padX * 2; // 896px
+  const innerPad = 64;
+  const contentWidth = cardWidth - innerPad * 2; // 768px
+
   const measureCanvas = document.createElement("canvas");
   const mCtx = measureCanvas.getContext("2d");
-  if (!mCtx) return false;
+  if (!mCtx) return null;
 
-  // 加载前 4 张照片（如有）
   const rawImages = card.images || [];
   const loadedImages = (
     await Promise.all(rawImages.slice(0, 4).map(loadImageElement))
@@ -187,12 +329,11 @@ export async function exportCardAsPolaroidImage(
     imgCount === 0
       ? 0
       : imgCount === 1
-      ? Math.round(contentWidth * 0.72)
+      ? Math.round(contentWidth * 0.7)
       : imgCount === 2
       ? Math.round(contentWidth * 0.56)
-      : Math.round(contentWidth * 0.82);
+      : Math.round(contentWidth * 0.8);
 
-  // 测量标题 / 金句行数
   const headlineText =
     card.type === "ai_insight"
       ? `“${card.summary || card.rawContent.slice(0, 36)}”`
@@ -203,189 +344,397 @@ export async function exportCardAsPolaroidImage(
     ? wrapTextLines(mCtx, headlineText, contentWidth, 4)
     : [];
 
-  // 测量正文行数
   mCtx.font = '28px -apple-system, "PingFang SC", "Noto Sans SC", sans-serif';
   const bodyLines = wrapTextLines(mCtx, card.rawContent, contentWidth, 16);
 
   const headlineHeight = headlineLines.length * 60;
   const bodyHeight = bodyLines.length * 46;
 
-  const cardHeight =
-    innerPad +
+  // ========== 版式 1：经典拍立得 (polaroid) ==========
+  if (template === "polaroid") {
+    const cardHeight =
+      innerPad +
+      40 +
+      (photoHeight > 0 ? photoHeight + 44 : 0) +
+      (headlineHeight > 0 ? headlineHeight + 32 : 0) +
+      bodyHeight +
+      120 +
+      innerPad;
+
+    const canvasHeight = Math.max(cardHeight + 220, 1180);
+    const cardX = padX;
+    const cardY = Math.round((canvasHeight - cardHeight) / 2);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    ctx.fillStyle = "#F6EFE0";
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    ctx.fillStyle = "rgba(148, 126, 96, 0.25)";
+    for (let y = 24; y < canvasHeight; y += 36) {
+      for (let x = 24; x < canvasWidth; x += 36) {
+        ctx.beginPath();
+        ctx.arc(x, y, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    const palette =
+      PAPER_HEX[card.paperColor || "cream"] || PAPER_HEX.cream;
+
+    ctx.save();
+    ctx.shadowColor = "rgba(52, 38, 22, 0.16)";
+    ctx.shadowBlur = 42;
+    ctx.shadowOffsetY = 18;
+    drawRoundedRect(ctx, cardX, cardY, cardWidth, cardHeight, 36);
+    ctx.fillStyle = card.type === "exhibition" ? "#FFFDF9" : palette.bg;
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    drawRoundedRect(ctx, cardX, cardY, cardWidth, cardHeight, 36);
+    ctx.strokeStyle = palette.border;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.restore();
+
+    if (card.type === "exhibition") {
+      ctx.save();
+      ctx.translate(canvasWidth / 2, cardY);
+      ctx.rotate(-0.03);
+      ctx.fillStyle = "rgba(233, 200, 147, 0.82)";
+      ctx.fillRect(-110, -22, 220, 44);
+      ctx.restore();
+    } else {
+      const pinColor =
+        card.type === "milestone" ? "#D4892A" : palette.accent;
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,0.22)";
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetY = 5;
+      ctx.beginPath();
+      ctx.arc(canvasWidth / 2, cardY + 6, 18, 0, Math.PI * 2);
+      ctx.fillStyle = pinColor;
+      ctx.fill();
+      ctx.restore();
+
+      ctx.beginPath();
+      ctx.arc(canvasWidth / 2 - 5, cardY + 1, 5, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.fill();
+    }
+
+    let curY = cardY + innerPad + 28;
+    const leftX = cardX + innerPad;
+
+    if (imgCount > 0 && photoHeight > 0) {
+      drawPhotoCollage(
+        ctx,
+        loadedImages,
+        rawImages.length,
+        leftX,
+        curY,
+        contentWidth,
+        photoHeight,
+        18
+      );
+      curY += photoHeight + 48;
+    }
+
+    if (headlineLines.length > 0) {
+      ctx.font = 'bold 42px "Songti SC", "Noto Serif SC", Georgia, serif';
+      ctx.fillStyle = "#2A231C";
+      for (const line of headlineLines) {
+        curY += 54;
+        ctx.fillText(line, leftX, curY);
+      }
+      curY += 34;
+    }
+
+    ctx.font = '28px -apple-system, "PingFang SC", "Noto Sans SC", sans-serif';
+    ctx.fillStyle = "#4A4035";
+    for (const line of bodyLines) {
+      curY += 46;
+      ctx.strokeStyle = "rgba(186, 169, 142, 0.22)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(leftX, curY + 10);
+      ctx.lineTo(leftX + contentWidth, curY + 10);
+      ctx.stroke();
+
+      if (line) {
+        ctx.fillText(line, leftX, curY);
+      }
+    }
+
+    const footerY = cardY + cardHeight - innerPad;
+    ctx.font = '24px -apple-system, "PingFang SC", sans-serif';
+    ctx.fillStyle = "#7D7060";
+    const tagsStr = card.tags.map((t) => `#${t}`).join("  ");
+    ctx.fillText(tagsStr, leftX, footerY);
+
+    ctx.font = "24px monospace";
+    ctx.fillStyle = "#948675";
+    const dateText = card.location
+      ? `${card.location} · ${card.dateLabel}`
+      : card.dateLabel;
+    const dateWidth = ctx.measureText(dateText).width;
+    ctx.fillText(dateText, leftX + contentWidth - dateWidth, footerY);
+
+    return canvas.toDataURL("image/png");
+  }
+
+  // ========== 版式 2：电影感日签 (cinema) ==========
+  if (template === "cinema") {
+    const headerBlockH = 136;
+    const cardHeight =
+      innerPad +
+      headerBlockH +
+      (photoHeight > 0 ? photoHeight + 48 : 0) +
+      (headlineHeight > 0 ? headlineHeight + 36 : 0) +
+      bodyHeight +
+      130 +
+      innerPad;
+
+    const canvasHeight = Math.max(cardHeight + 210, 1220);
+    const cardX = padX;
+    const cardY = Math.round((canvasHeight - cardHeight) / 2);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    // 暗调胡桃木影院底色 + 暖光晕
+    ctx.fillStyle = "#16120F";
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    const radGrad = ctx.createRadialGradient(
+      canvasWidth * 0.5,
+      canvasHeight * 0.3,
+      40,
+      canvasWidth * 0.5,
+      canvasHeight * 0.45,
+      canvasWidth * 0.75
+    );
+    radGrad.addColorStop(0, "rgba(224, 168, 92, 0.16)");
+    radGrad.addColorStop(1, "rgba(22, 18, 15, 0)");
+    ctx.fillStyle = radGrad;
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    // 胶片日签主体框
+    ctx.save();
+    ctx.shadowColor = "rgba(0, 0, 0, 0.65)";
+    ctx.shadowBlur = 50;
+    ctx.shadowOffsetY = 24;
+    drawRoundedRect(ctx, cardX, cardY, cardWidth, cardHeight, 28);
+    ctx.fillStyle = "#221C17";
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    drawRoundedRect(ctx, cardX, cardY, cardWidth, cardHeight, 28);
+    ctx.strokeStyle = "#4E3E2E";
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.restore();
+
+    const leftX = cardX + innerPad;
+    let curY = cardY + innerPad;
+
+    // 顶部大号日历数字与电影场记信息
+    const { yearMonth, day, weekday } = parseDateParts(card);
+    ctx.font = 'bold 86px "Songti SC", Georgia, serif';
+    ctx.fillStyle = "#E8C589";
+    ctx.fillText(day, leftX, curY + 74);
+
+    const dayW = ctx.measureText(day).width;
+    ctx.font = "bold 24px monospace";
+    ctx.fillStyle = "#C9B393";
+    ctx.fillText(yearMonth, leftX + dayW + 22, curY + 38);
+
+    ctx.font = '24px -apple-system, "PingFang SC", sans-serif';
+    ctx.fillStyle = "#9C8970";
+    ctx.fillText(
+      `${weekday}${card.location ? ` · ${card.location}` : ""}`,
+      leftX + dayW + 22,
+      curY + 72
+    );
+
+    // 右上角金色铭牌
+    const badgeLabel =
+      card.type === "ai_insight"
+        ? "INSIGHT · 灵感帧"
+        : card.type === "exhibition"
+        ? "SCENE · 现场帧"
+        : "HIGHLIGHT · 高光帧";
+    ctx.font = "bold 20px monospace";
+    const bw = ctx.measureText(badgeLabel).width + 32;
+    drawRoundedRect(
+      ctx,
+      leftX + contentWidth - bw,
+      curY + 20,
+      bw,
+      42,
+      21
+    );
+    ctx.fillStyle = "rgba(232, 197, 137, 0.14)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(232, 197, 137, 0.45)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = "#E8C589";
+    ctx.fillText(badgeLabel, leftX + contentWidth - bw + 16, curY + 48);
+
+    // 分割金线
+    curY += 108;
+    ctx.strokeStyle = "rgba(232, 197, 137, 0.25)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(leftX, curY);
+    ctx.lineTo(leftX + contentWidth, curY);
+    ctx.stroke();
+    curY += 32;
+
+    if (imgCount > 0 && photoHeight > 0) {
+      drawPhotoCollage(
+        ctx,
+        loadedImages,
+        rawImages.length,
+        leftX,
+        curY,
+        contentWidth,
+        photoHeight,
+        14
+      );
+      curY += photoHeight + 46;
+    }
+
+    if (headlineLines.length > 0) {
+      // 左侧琥珀金竖线装饰
+      ctx.fillStyle = "#D4892A";
+      ctx.fillRect(leftX, curY + 12, 6, headlineLines.length * 54 - 8);
+
+      ctx.font = 'bold 40px "Songti SC", "Noto Serif SC", Georgia, serif';
+      ctx.fillStyle = "#F7EFE2";
+      for (const line of headlineLines) {
+        curY += 54;
+        ctx.fillText(line, leftX + 24, curY);
+      }
+      curY += 32;
+    }
+
+    ctx.font = '28px -apple-system, "PingFang SC", "Noto Sans SC", sans-serif';
+    ctx.fillStyle = "#CFC0AC";
+    for (const line of bodyLines) {
+      curY += 46;
+      if (line) {
+        ctx.fillText(line, leftX, curY);
+      }
+    }
+
+    // 底部电影字幕感底栏
+    const footerY = cardY + cardHeight - innerPad;
+    ctx.strokeStyle = "rgba(232, 197, 137, 0.18)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(leftX, footerY - 42);
+    ctx.lineTo(leftX + contentWidth, footerY - 42);
+    ctx.stroke();
+
+    ctx.font = '23px -apple-system, "PingFang SC", sans-serif';
+    ctx.fillStyle = "#D49B4B";
+    const tagsStr = card.tags.map((t) => `#${t}`).join("  ");
+    ctx.fillText(tagsStr, leftX, footerY);
+
+    ctx.font = "21px monospace";
+    ctx.fillStyle = "#857461";
+    const brandText = "VIBE MEMORY · 记忆手账";
+    const brandW = ctx.measureText(brandText).width;
+    ctx.fillText(brandText, leftX + contentWidth - brandW, footerY);
+
+    return canvas.toDataURL("image/png");
+  }
+
+  // ========== 版式 3：展览纪念票根 (ticket) ==========
+  const topHeaderH = 110;
+  const stubHeight = 165;
+  const mainBodyH =
+    topHeaderH +
     40 +
     (photoHeight > 0 ? photoHeight + 44 : 0) +
     (headlineHeight > 0 ? headlineHeight + 32 : 0) +
     bodyHeight +
-    120 +
-    innerPad;
-
-  const canvasHeight = Math.max(cardHeight + 220, 1180);
+    70;
+  const cardHeight = mainBodyH + stubHeight;
+  const canvasHeight = Math.max(cardHeight + 220, 1220);
   const cardX = padX;
   const cardY = Math.round((canvasHeight - cardHeight) / 2);
+  const stubY = cardY + mainBodyH;
 
   const canvas = document.createElement("canvas");
   canvas.width = canvasWidth;
   canvas.height = canvasHeight;
   const ctx = canvas.getContext("2d");
-  if (!ctx) return false;
+  if (!ctx) return null;
 
-  // 1. 绘制暖色点阵墙面背景
-  ctx.fillStyle = "#F6EFE0";
+  // 亚麻展览底色
+  const bgHex = "#EAE0CE";
+  ctx.fillStyle = bgHex;
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-  ctx.fillStyle = "rgba(148, 126, 96, 0.25)";
-  for (let y = 24; y < canvasHeight; y += 36) {
-    for (let x = 24; x < canvasWidth; x += 36) {
-      ctx.beginPath();
-      ctx.arc(x, y, 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  // 2. 绘制便签卡片阴影与纸张底板
-  const palette =
-    PAPER_HEX[card.paperColor || "cream"] || PAPER_HEX.cream;
-
+  // 票根主体白卡
   ctx.save();
-  ctx.shadowColor = "rgba(52, 38, 22, 0.16)";
-  ctx.shadowBlur = 42;
-  ctx.shadowOffsetY = 18;
-  drawRoundedRect(ctx, cardX, cardY, cardWidth, cardHeight, 36);
-  ctx.fillStyle = card.type === "exhibition" ? "#FFFDF9" : palette.bg;
+  ctx.shadowColor = "rgba(54, 40, 24, 0.16)";
+  ctx.shadowBlur = 38;
+  ctx.shadowOffsetY = 16;
+  drawRoundedRect(ctx, cardX, cardY, cardWidth, cardHeight, 28);
+  ctx.fillStyle = "#FFFDF8";
   ctx.fill();
   ctx.restore();
 
+  // 顶部复古色块眉头
   ctx.save();
-  drawRoundedRect(ctx, cardX, cardY, cardWidth, cardHeight, 36);
-  ctx.strokeStyle = palette.border;
-  ctx.lineWidth = 3;
-  ctx.stroke();
+  drawRoundedRect(ctx, cardX, cardY, cardWidth, topHeaderH, 28);
+  ctx.fillStyle = "#2C251E";
+  ctx.fill();
+  ctx.fillRect(cardX, cardY + topHeaderH - 28, cardWidth, 28);
   ctx.restore();
 
-  // 3. 绘制顶部立体图钉或和纸胶带
-  if (card.type === "exhibition") {
-    ctx.save();
-    ctx.translate(canvasWidth / 2, cardY);
-    ctx.rotate(-0.03);
-    ctx.fillStyle = "rgba(233, 200, 147, 0.82)";
-    ctx.fillRect(-110, -22, 220, 44);
-    ctx.restore();
-  } else {
-    const pinColor =
-      card.type === "milestone" ? "#D4892A" : palette.accent;
-    ctx.save();
-    ctx.shadowColor = "rgba(0,0,0,0.22)";
-    ctx.shadowBlur = 10;
-    ctx.shadowOffsetY = 5;
-    ctx.beginPath();
-    ctx.arc(canvasWidth / 2, cardY + 6, 18, 0, Math.PI * 2);
-    ctx.fillStyle = pinColor;
-    ctx.fill();
-    ctx.restore();
-
-    ctx.beginPath();
-    ctx.arc(canvasWidth / 2 - 5, cardY + 1, 5, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
-    ctx.fill();
-  }
-
-  let curY = cardY + innerPad + 28;
   const leftX = cardX + innerPad;
+  ctx.font = "bold 24px monospace";
+  ctx.fillStyle = "#E8C589";
+  ctx.fillText("ADMIT ONE · 记忆手账珍藏票根", leftX, cardY + 52);
 
-  // 4. 绘制拍立得照片（支持单图、双拼、三图、四宫格拼图）
+  ctx.font = "21px monospace";
+  ctx.fillStyle = "#A89882";
+  ctx.fillText(
+    `NO. ${card.id.slice(-6).toUpperCase()}  |  ${card.dateLabel}`,
+    leftX,
+    cardY + 86
+  );
+
+  let curY = cardY + topHeaderH + 40;
+
   if (imgCount > 0 && photoHeight > 0) {
-    const gap = 14;
-    if (imgCount === 1) {
-      drawCoverImageCell(
-        ctx,
-        loadedImages[0],
-        leftX,
-        curY,
-        contentWidth,
-        photoHeight,
-        20
-      );
-    } else if (imgCount === 2) {
-      const cellW = Math.floor((contentWidth - gap) / 2);
-      drawCoverImageCell(ctx, loadedImages[0], leftX, curY, cellW, photoHeight, 18);
-      drawCoverImageCell(
-        ctx,
-        loadedImages[1],
-        leftX + cellW + gap,
-        curY,
-        cellW,
-        photoHeight,
-        18
-      );
-    } else if (imgCount === 3) {
-      const topH = Math.floor(photoHeight * 0.56);
-      const botH = photoHeight - topH - gap;
-      const botW = Math.floor((contentWidth - gap) / 2);
-      drawCoverImageCell(
-        ctx,
-        loadedImages[0],
-        leftX,
-        curY,
-        contentWidth,
-        topH,
-        18
-      );
-      drawCoverImageCell(
-        ctx,
-        loadedImages[1],
-        leftX,
-        curY + topH + gap,
-        botW,
-        botH,
-        16
-      );
-      drawCoverImageCell(
-        ctx,
-        loadedImages[2],
-        leftX + botW + gap,
-        curY + topH + gap,
-        botW,
-        botH,
-        16
-      );
-    } else {
-      const cellW = Math.floor((contentWidth - gap) / 2);
-      const cellH = Math.floor((photoHeight - gap) / 2);
-      const extra = Math.max(0, rawImages.length - 4);
-      drawCoverImageCell(ctx, loadedImages[0], leftX, curY, cellW, cellH, 16);
-      drawCoverImageCell(
-        ctx,
-        loadedImages[1],
-        leftX + cellW + gap,
-        curY,
-        cellW,
-        cellH,
-        16
-      );
-      drawCoverImageCell(
-        ctx,
-        loadedImages[2],
-        leftX,
-        curY + cellH + gap,
-        cellW,
-        cellH,
-        16
-      );
-      drawCoverImageCell(
-        ctx,
-        loadedImages[3],
-        leftX + cellW + gap,
-        curY + cellH + gap,
-        cellW,
-        cellH,
-        16,
-        extra
-      );
-    }
-    curY += photoHeight + 48;
+    drawPhotoCollage(
+      ctx,
+      loadedImages,
+      rawImages.length,
+      leftX,
+      curY,
+      contentWidth,
+      photoHeight,
+      14
+    );
+    curY += photoHeight + 44;
   }
 
-  // 5. 绘制金句或标题
   if (headlineLines.length > 0) {
     ctx.font = 'bold 42px "Songti SC", "Noto Serif SC", Georgia, serif';
     ctx.fillStyle = "#2A231C";
@@ -393,45 +742,95 @@ export async function exportCardAsPolaroidImage(
       curY += 54;
       ctx.fillText(line, leftX, curY);
     }
-    curY += 34;
+    curY += 30;
   }
 
-  // 6. 绘制正文与信纸横线
   ctx.font = '28px -apple-system, "PingFang SC", "Noto Sans SC", sans-serif';
   ctx.fillStyle = "#4A4035";
   for (const line of bodyLines) {
     curY += 46;
-    ctx.strokeStyle = "rgba(186, 169, 142, 0.22)";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(leftX, curY + 10);
-    ctx.lineTo(leftX + contentWidth, curY + 10);
-    ctx.stroke();
-
     if (line) {
       ctx.fillText(line, leftX, curY);
     }
   }
 
-  // 7. 底部标签与日期印记
-  const footerY = cardY + cardHeight - innerPad;
-  ctx.font = '24px -apple-system, "PingFang SC", sans-serif';
+  // 撕票虚线与左右半圆齿孔缺口
+  ctx.save();
+  ctx.setLineDash([12, 10]);
+  ctx.strokeStyle = "#CBBBA2";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(cardX + 36, stubY);
+  ctx.lineTo(cardX + cardWidth - 36, stubY);
+  ctx.stroke();
+  ctx.restore();
+
+  // 左右两侧半圆打孔缺口
+  const notchR = 26;
+  ctx.fillStyle = bgHex;
+  ctx.beginPath();
+  ctx.arc(cardX, stubY, notchR, 0, Math.PI * 2);
+  ctx.arc(cardX + cardWidth, stubY, notchR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 右下角复古朱砂印章
+  ctx.save();
+  ctx.translate(cardX + cardWidth - 155, stubY - 58);
+  ctx.rotate(-0.18);
+  ctx.strokeStyle = "rgba(196, 78, 52, 0.72)";
+  ctx.lineWidth = 3;
+  drawRoundedRect(ctx, -84, -30, 168, 60, 10);
+  ctx.stroke();
+  ctx.font = 'bold 22px "Songti SC", serif';
+  ctx.fillStyle = "rgba(196, 78, 52, 0.78)";
+  ctx.fillText("已珍藏 · 记忆库", -70, 8);
+  ctx.restore();
+
+  // 副券底部：左侧仿真条形码 + 右侧地点与标签
+  const barY = stubY + 40;
+  let barX = leftX;
+  const barPattern = [4, 2, 6, 3, 2, 5, 2, 4, 7, 2, 3, 5, 2, 4, 3, 6, 2, 4];
+  ctx.fillStyle = "#3A3128";
+  for (let i = 0; i < barPattern.length; i++) {
+    const w = barPattern[i];
+    if (i % 2 === 0) {
+      ctx.fillRect(barX, barY, w, 74);
+    }
+    barX += w + 4;
+  }
+  ctx.font = "18px monospace";
+  ctx.fillStyle = "#8C7D6B";
+  ctx.fillText(`*${card.id.slice(-8).toUpperCase()}*`, leftX, barY + 96);
+
+  // 副券右侧文字
+  const rightInfoX = leftX + 210;
+  ctx.font = 'bold 26px -apple-system, "PingFang SC", sans-serif';
+  ctx.fillStyle = "#2C251E";
+  ctx.fillText(
+    card.location || "个人记忆与灵感手账馆",
+    rightInfoX,
+    barY + 34
+  );
+
+  ctx.font = '23px -apple-system, "PingFang SC", sans-serif';
   ctx.fillStyle = "#7D7060";
   const tagsStr = card.tags.map((t) => `#${t}`).join("  ");
-  ctx.fillText(tagsStr, leftX, footerY);
+  ctx.fillText(tagsStr, rightInfoX, barY + 76);
 
-  ctx.font = "24px monospace";
-  ctx.fillStyle = "#948675";
-  const dateText = card.location
-    ? `${card.location} · ${card.dateLabel}`
-    : card.dateLabel;
-  const dateWidth = ctx.measureText(dateText).width;
-  ctx.fillText(dateText, leftX + contentWidth - dateWidth, footerY);
+  return canvas.toDataURL("image/png");
+}
 
-  // 8. 生成高清 PNG Base64 并唤起应用内海报预览与原生保存/分享弹窗
+/**
+ * 将单张便签渲染为高清分享卡片图并唤起预览/切换版式弹窗
+ */
+export async function exportCardAsPolaroidImage(
+  card: MemoryCard,
+  template: PosterTemplate = "polaroid"
+): Promise<boolean> {
   try {
-    const dataUrl = canvas.toDataURL("image/png");
-    const fileName = `记忆手账-${card.id.slice(-6)}.png`;
+    const dataUrl = await renderPosterDataUrl(card, template);
+    if (!dataUrl) return false;
+    const fileName = `记忆手账-${template}-${card.id.slice(-6)}.png`;
     const title = card.title || card.summary || "记忆手账分享卡";
 
     if (typeof window !== "undefined") {
@@ -439,6 +838,8 @@ export async function exportCardAsPolaroidImage(
         dataUrl,
         fileName,
         title,
+        card,
+        template,
       };
       window.dispatchEvent(
         new CustomEvent(POSTER_GENERATED_EVENT, { detail: payload })

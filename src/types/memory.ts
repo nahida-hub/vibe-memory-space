@@ -2,7 +2,20 @@ export type CardType = "ai_insight" | "exhibition" | "milestone";
 
 export type LayoutMode = "wall" | "masonry";
 
+export type ThemeMode = "daylight" | "night_lamp";
+
 export type PaperColor = "cream" | "butter" | "sage" | "blush" | "kraft";
+
+export type PosterTemplate = "polaroid" | "cinema" | "ticket";
+
+export interface BoardZone {
+  id: string;
+  title: string;
+  subtitle?: string;
+  x: number;
+  y: number;
+  style: "walnut" | "brass" | "washi";
+}
 
 export interface MemoryCard {
   id: string;
@@ -17,6 +30,9 @@ export interface MemoryCard {
   boardY?: number;
   rotation?: number;
   paperColor?: PaperColor;
+
+  // 关联便签 ID 列表（用于墙面麻绳/红线连线）
+  linkedCardIds?: string[];
 
   // 正文内容
   rawContent: string;

@@ -8,6 +8,7 @@ export const INITIAL_MEMORIES: MemoryCard[] = [
     dateLabel: "2026.11.09 · 周一",
     tags: ["高光时刻", "独立产品", "新起点"],
     isPinned: true,
+    linkedCardIds: ["mem-2"],
     milestoneBadge: "重要里程碑",
     title: "开启「个人散装记忆与灵感空间」第一个原型",
     rawContent:

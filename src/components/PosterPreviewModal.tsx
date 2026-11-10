@@ -9,16 +9,34 @@ import {
   CheckCircle2,
   AlertCircle,
   Sparkles,
+  Camera,
+  Film,
+  Ticket,
 } from "lucide-react";
+import { PosterTemplate } from "@/types/memory";
 import {
   GeneratedPosterPayload,
   POSTER_GENERATED_EVENT,
+  renderPosterDataUrl,
 } from "@/utils/posterExport";
 import { AppUpdaterNative } from "@/utils/appUpdater";
 import { triggerHaptic } from "@/utils/storageDb";
 
+const TEMPLATE_OPTIONS: {
+  id: PosterTemplate;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  { id: "polaroid", label: "经典拍立得", icon: Camera },
+  { id: "cinema", label: "电影感日签", icon: Film },
+  { id: "ticket", label: "展览票根", icon: Ticket },
+];
+
 export default function PosterPreviewModal() {
   const [poster, setPoster] = useState<GeneratedPosterPayload | null>(null);
+  const [activeTemplate, setActiveTemplate] =
+    useState<PosterTemplate>("polaroid");
+  const [renderingTemplate, setRenderingTemplate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [feedback, setFeedback] = useState<{
@@ -31,6 +49,7 @@ export default function PosterPreviewModal() {
       const customEv = e as CustomEvent<GeneratedPosterPayload>;
       if (customEv.detail?.dataUrl) {
         setPoster(customEv.detail);
+        setActiveTemplate(customEv.detail.template || "polaroid");
         setFeedback(null);
       }
     };
@@ -41,6 +60,31 @@ export default function PosterPreviewModal() {
   }, []);
 
   if (!poster) return null;
+
+  const handleSelectTemplate = async (nextTpl: PosterTemplate) => {
+    if (nextTpl === activeTemplate || renderingTemplate || !poster.card) return;
+    triggerHaptic(8);
+    setActiveTemplate(nextTpl);
+    setRenderingTemplate(true);
+    setFeedback(null);
+    try {
+      const nextUrl = await renderPosterDataUrl(poster.card, nextTpl);
+      if (nextUrl) {
+        setPoster((prev) =>
+          prev
+            ? {
+                ...prev,
+                dataUrl: nextUrl,
+                template: nextTpl,
+                fileName: `记忆手账-${nextTpl}-${prev.card.id.slice(-6)}.png`,
+              }
+            : null
+        );
+      }
+    } finally {
+      setRenderingTemplate(false);
+    }
+  };
 
   const handleSaveToGallery = async () => {
     if (saving) return;
@@ -69,7 +113,7 @@ export default function PosterPreviewModal() {
         document.body.removeChild(a);
         setFeedback({
           type: "success",
-          text: "高清拍立得海报已下载保存！",
+          text: "高清手账分享海报已下载保存！",
         });
       }
     } catch (err: any) {
@@ -96,7 +140,6 @@ export default function PosterPreviewModal() {
           title: poster.title,
         });
       } else {
-        // 浏览器端优先尝试 Web Share API，不支持则直接触发下载
         const res = await fetch(poster.dataUrl);
         const blob = await res.blob();
         const file = new File([blob], poster.fileName, { type: "image/png" });
@@ -128,18 +171,18 @@ export default function PosterPreviewModal() {
   return (
     <div
       onClick={() => setPoster(null)}
-      className="fixed inset-0 z-[70] bg-[#1E1711]/70 backdrop-blur-xs flex items-center justify-center p-4"
+      className="fixed inset-0 z-[70] bg-[#1E1711]/75 backdrop-blur-xs flex items-center justify-center p-4"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-3xl bg-[#FBF6E9] border border-[#DFD2BA] paper-shadow overflow-hidden flex flex-col max-h-[90vh]"
+        className="w-full max-w-md rounded-3xl bg-[#FBF6E9] border border-[#DFD2BA] paper-shadow overflow-hidden flex flex-col max-h-[92vh]"
       >
         {/* 顶栏 */}
         <div className="px-5 py-3.5 bg-[#F4ECE0] border-b border-[#E5D8C1] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-[#C87D32]" />
             <h3 className="font-serif-notebook text-sm font-bold text-[#2C251E]">
-              拍立得分享海报已生成
+              手账分享海报预览
             </h3>
           </div>
           <button
@@ -151,12 +194,37 @@ export default function PosterPreviewModal() {
           </button>
         </div>
 
+        {/* 3 款海报模板一键切换栏 */}
+        <div className="px-4 py-2.5 bg-[#F6EFE2] border-b border-[#E8DCC6] flex items-center justify-center gap-2">
+          {TEMPLATE_OPTIONS.map((tpl) => {
+            const Icon = tpl.icon;
+            const isActive = activeTemplate === tpl.id;
+            return (
+              <button
+                key={tpl.id}
+                type="button"
+                onClick={() => handleSelectTemplate(tpl.id)}
+                className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  isActive
+                    ? "bg-[#2C251E] text-[#FBF6E9] shadow-xs"
+                    : "bg-[#FFFDF8] text-[#66594B] border border-[#E2D6BE] hover:bg-[#EFE7D6]"
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{tpl.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* 海报预览区 */}
-        <div className="p-4 overflow-y-auto flex-1 flex flex-col items-center justify-center bg-[#EFE6D5]/60">
+        <div className="p-4 overflow-y-auto flex-1 flex flex-col items-center justify-center bg-[#EFE6D5]/60 relative">
           <img
             src={poster.dataUrl}
             alt={poster.title}
-            className="max-h-[54vh] w-auto rounded-2xl shadow-lg border border-[#E2D6BE] object-contain"
+            className={`max-h-[48vh] w-auto rounded-2xl shadow-lg border border-[#E2D6BE] object-contain transition-opacity duration-200 ${
+              renderingTemplate ? "opacity-50" : "opacity-100"
+            }`}
           />
         </div>
 
@@ -183,7 +251,7 @@ export default function PosterPreviewModal() {
             <button
               type="button"
               onClick={handleSaveToGallery}
-              disabled={saving}
+              disabled={saving || renderingTemplate}
               className="py-3 px-3 rounded-2xl text-xs font-semibold bg-[#496044] hover:bg-[#3D5239] disabled:opacity-60 text-white flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
             >
               <Download className="w-4 h-4" />
@@ -193,7 +261,7 @@ export default function PosterPreviewModal() {
             <button
               type="button"
               onClick={handleShareNative}
-              disabled={sharing}
+              disabled={sharing || renderingTemplate}
               className="py-3 px-3 rounded-2xl text-xs font-semibold bg-[#2C251E] hover:bg-[#3D332A] disabled:opacity-60 text-[#FBF6E9] flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
             >
               <Share2 className="w-4 h-4 text-[#E8C589]" />

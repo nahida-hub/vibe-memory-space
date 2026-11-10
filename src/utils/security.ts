@@ -241,6 +241,16 @@ export function sanitizeMemoryCard(
       ? Math.max(-25, Math.min(25, obj.rotation))
       : undefined;
 
+  const linkedCardIds = Array.isArray(obj.linkedCardIds)
+    ? Array.from(
+        new Set(
+          obj.linkedCardIds
+            .map((cid) => clampString(cid, 80).replace(/[^a-zA-Z0-9_-]/g, ""))
+            .filter((cid) => Boolean(cid) && cid !== id)
+        )
+      ).slice(0, 20)
+    : undefined;
+
   return {
     id,
     type,
@@ -252,6 +262,7 @@ export function sanitizeMemoryCard(
     boardY,
     rotation,
     paperColor,
+    ...(linkedCardIds && linkedCardIds.length > 0 ? { linkedCardIds } : {}),
     rawContent: rawContent || title || "记录此刻",
     ...(summary ? { summary } : {}),
     ...(typeof obj.aiModel === "string" && obj.aiModel.trim()

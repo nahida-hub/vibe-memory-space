@@ -14,6 +14,20 @@
   --accent-gold: #d4942a;
 }
 
+html[data-theme="night_lamp"] {
+  --paper-bg: #1c1713;
+  --paper-bg-secondary: #261f1a;
+  --paper-card: #2c241d;
+  --paper-ai: #27201a;
+  --paper-border: #46392d;
+  --ink-primary: #f2e6d4;
+  --ink-secondary: #c4b299;
+  --ink-muted: #8f7e6a;
+  --accent-amber: #df9244;
+  --accent-sage: #7a9973;
+  --accent-gold: #e5a843;
+}
+
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
@@ -137,6 +151,45 @@ button:active:not(:disabled) {
 .wall-dot-matrix {
   background-color: #f6efe0;
   background-image: radial-gradient(rgba(148, 126, 96, 0.28) 1.25px, transparent 1.25px);
+  transition: background-color 0.32s ease;
+}
+
+html[data-theme="night_lamp"] body {
+  background-color: #1b1612;
+  color: #f2e6d4;
+  background-image:
+    radial-gradient(rgba(218, 179, 118, 0.16) 1px, transparent 1px),
+    radial-gradient(circle at 50% 25%, rgba(232, 176, 92, 0.14) 0%, transparent 60%),
+    radial-gradient(circle at 80% 85%, rgba(168, 110, 48, 0.08) 0%, transparent 60%);
+}
+
+html[data-theme="night_lamp"] .wall-dot-matrix {
+  background-color: #1b1612;
+  background-image: radial-gradient(rgba(222, 184, 126, 0.22) 1.25px, transparent 1.25px);
+}
+
+/* 深夜台灯模式的书桌暖光锥覆层 */
+.lamp-ambient-cone {
+  background: radial-gradient(
+    circle at 50% 36%,
+    rgba(244, 192, 108, 0.14) 0%,
+    rgba(210, 146, 68, 0.06) 42%,
+    rgba(20, 15, 11, 0.32) 85%
+  );
+}
+
+html[data-theme="night_lamp"] .sticky-note-shadow {
+  box-shadow:
+    0 6px 16px -2px rgba(0, 0, 0, 0.48),
+    0 18px 34px -8px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 0 rgba(255, 244, 222, 0.12);
+}
+
+html[data-theme="night_lamp"] .polaroid-shadow {
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.5),
+    0 16px 32px -6px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(92, 74, 54, 0.7);
 }
 
 /* 手账横线信纸纹理（用于AI灵感卡背面或折叠区） */

@@ -8,8 +8,16 @@ import {
   Settings,
   Sparkles,
   RotateCcw,
+  Sun,
+  Moon,
 } from "lucide-react";
-import { CardType, LayoutMode, MemoryCard, PaperColor } from "@/types/memory";
+import {
+  CardType,
+  LayoutMode,
+  MemoryCard,
+  PaperColor,
+  ThemeMode,
+} from "@/types/memory";
 import {
   AiConfig,
   AI_CONFIG_STORAGE_KEY,
@@ -58,6 +66,10 @@ export default function HomePage() {
 
   // 默认采用四面八方自由滑动的「便签墙」模式
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("wall");
+  const [themeMode, setThemeMode] = useState<ThemeMode>("daylight");
+  const [linkingFromCardId, setLinkingFromCardId] = useState<string | null>(
+    null
+  );
   const [centerTrigger, setCenterTrigger] = useState(0);
   const [focusCardRequest, setFocusCardRequest] = useState<{
     id: string;
@@ -116,6 +128,16 @@ export default function HomePage() {
       }
 
       requestPersistentStorage();
+
+      try {
+        const savedTheme = localStorage.getItem("vibe_memory_theme_v1");
+        if (savedTheme === "night_lamp" || savedTheme === "daylight") {
+          setThemeMode(savedTheme);
+          document.documentElement.dataset.theme = savedTheme;
+        }
+      } catch {
+        // ignore
+      }
 
       try {
         const savedAiConfig = localStorage.getItem(AI_CONFIG_STORAGE_KEY);
@@ -437,6 +459,47 @@ export default function HomePage() {
     );
   };
 
+  const handleChangeThemeMode = (nextTheme: ThemeMode) => {
+    setThemeMode(nextTheme);
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.theme = nextTheme;
+    }
+    try {
+      localStorage.setItem("vibe_memory_theme_v1", nextTheme);
+    } catch {
+      // ignore
+    }
+  };
+
+  // 切换两张便签之间的红线关联（已关联则解开，未关联则双向/单向记录连线）
+  const handleToggleLinkCard = (sourceId: string, targetId: string) => {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    triggerHaptic([8, 20, 8]);
+    setMemories((prev) => {
+      const sourceCard = prev.find((m) => m.id === sourceId);
+      const targetCard = prev.find((m) => m.id === targetId);
+      if (!sourceCard || !targetCard) return prev;
+
+      const isAlreadyLinked =
+        (sourceCard.linkedCardIds || []).includes(targetId) ||
+        (targetCard.linkedCardIds || []).includes(sourceId);
+
+      return prev.map((item) => {
+        if (item.id !== sourceId && item.id !== targetId) return item;
+        const otherId = item.id === sourceId ? targetId : sourceId;
+        const curList = item.linkedCardIds || [];
+        const nextList = isAlreadyLinked
+          ? curList.filter((id) => id !== otherId)
+          : Array.from(new Set([...curList, otherId]));
+        const updated = { ...item, linkedCardIds: nextList };
+        if (selectedCard?.id === item.id) {
+          setSelectedCard(updated);
+        }
+        return updated;
+      });
+    });
+  };
+
   const handleImportMemories = (
     imported: MemoryCard[],
     mode: "merge" | "replace"
@@ -476,7 +539,11 @@ export default function HomePage() {
                 onBlur={() => setTimeout(() => setIsSearchFocused(false), 180)}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="搜索便签、地点、#标签..."
-                className="w-full pl-9 pr-8 py-2.5 rounded-full bg-[#FFFDF8]/92 backdrop-blur-md border border-[#DED2BA] shadow-md text-xs text-[#2C251E] placeholder:text-[#A39584] focus:outline-none focus:border-[#8C7A65]"
+                className={`w-full pl-9 pr-8 py-2.5 rounded-full backdrop-blur-md border shadow-md text-xs focus:outline-none transition-colors ${
+                  themeMode === "night_lamp"
+                    ? "bg-[#261F1A]/92 border-[#4A3B2F] text-[#EADBC4] placeholder:text-[#8E7D6A] focus:border-[#C87D32]"
+                    : "bg-[#FFFDF8]/92 border-[#DED2BA] text-[#2C251E] placeholder:text-[#A39584] focus:border-[#8C7A65]"
+                }`}
               />
               {searchQuery && (
                 <button
@@ -489,6 +556,33 @@ export default function HomePage() {
               )}
             </div>
 
+            {/* 深夜台灯 / 日间暖纸一键切换按钮 */}
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(8);
+                handleChangeThemeMode(
+                  themeMode === "night_lamp" ? "daylight" : "night_lamp"
+                );
+              }}
+              title={
+                themeMode === "night_lamp"
+                  ? "切换为日间暖纸模式"
+                  : "开启深夜台灯夜读模式"
+              }
+              className={`w-10 h-10 rounded-full backdrop-blur-md border shadow-md flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
+                themeMode === "night_lamp"
+                  ? "bg-[#261F1A]/92 border-[#5E4A36] text-[#E8C589]"
+                  : "bg-[#FFFDF8]/92 border-[#DED2BA] text-[#8C6D46] hover:text-[#2C251E]"
+              }`}
+            >
+              {themeMode === "night_lamp" ? (
+                <Sun className="w-4 h-4" />
+              ) : (
+                <Moon className="w-4 h-4" />
+              )}
+            </button>
+
             {/* AI 翻阅手账回顾入口按钮 */}
             <button
               type="button"
@@ -497,7 +591,11 @@ export default function HomePage() {
                 setIsAiReviewOpen(true);
               }}
               title="AI 翻阅手账 · 周期回顾"
-              className="w-10 h-10 rounded-full bg-[#FFFDF8]/92 backdrop-blur-md border border-[#DED2BA] shadow-md flex items-center justify-center text-[#496044] hover:text-[#2C251E] cursor-pointer shrink-0"
+              className={`w-10 h-10 rounded-full backdrop-blur-md border shadow-md flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
+                themeMode === "night_lamp"
+                  ? "bg-[#261F1A]/92 border-[#4A3B2F] text-[#8BAF83]"
+                  : "bg-[#FFFDF8]/92 border-[#DED2BA] text-[#496044] hover:text-[#2C251E]"
+              }`}
             >
               <Sparkles className="w-4 h-4" />
             </button>
@@ -510,7 +608,11 @@ export default function HomePage() {
                 setIsSettingsOpen(true);
               }}
               title="设置"
-              className="relative w-10 h-10 rounded-full bg-[#FFFDF8]/92 backdrop-blur-md border border-[#DED2BA] shadow-md flex items-center justify-center text-[#5E5244] hover:text-[#2C251E] cursor-pointer shrink-0"
+              className={`relative w-10 h-10 rounded-full backdrop-blur-md border shadow-md flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
+                themeMode === "night_lamp"
+                  ? "bg-[#261F1A]/92 border-[#4A3B2F] text-[#C4B299]"
+                  : "bg-[#FFFDF8]/92 border-[#DED2BA] text-[#5E5244] hover:text-[#2C251E]"
+              }`}
             >
               <Settings className="w-4 h-4" />
               {hasAvailableUpdate && (
@@ -588,6 +690,10 @@ export default function HomePage() {
           matchedIds={matchedIds}
           hasActiveFilter={hasActiveFilter}
           activeTag={activeTag}
+          themeMode={themeMode}
+          linkingFromCardId={linkingFromCardId}
+          onCancelLinking={() => setLinkingFromCardId(null)}
+          onToggleLinkCard={handleToggleLinkCard}
           onSelectCard={(card) => setSelectedCard(card)}
           onTagClick={(tag) => setActiveTag(activeTag === tag ? null : tag)}
           onUpdateCardPosition={handleUpdateCardPosition}
@@ -710,6 +816,7 @@ export default function HomePage() {
       {/* 点击墙上任意便签弹出的详情阅读窗 */}
       <NoteDetailModal
         card={selectedCard}
+        allMemories={memories}
         isRedistilling={
           Boolean(selectedCard && redistillingCardId === selectedCard.id)
         }
@@ -723,6 +830,15 @@ export default function HomePage() {
         onOpenLightbox={(images, startIndex, title) =>
           setLightboxState({ images, index: startIndex, title })
         }
+        onSelectLinkedCard={(linked) => {
+          setSelectedCard(linked);
+          setFocusCardRequest({ id: linked.id, seq: Date.now() });
+        }}
+        onToggleLinkCard={handleToggleLinkCard}
+        onStartWallLinking={(sourceId) => {
+          setLayoutMode("wall");
+          setLinkingFromCardId(sourceId);
+        }}
       />
 
       {/* 新增 / 编辑便签弹窗 */}
@@ -758,6 +874,7 @@ export default function HomePage() {
         isOpen={isSettingsOpen}
         aiConfig={aiConfig}
         layoutMode={layoutMode}
+        themeMode={themeMode}
         memories={memories}
         canInstallPwa={Boolean(deferredInstallPrompt)}
         onTriggerInstallPwa={async () => {
@@ -771,6 +888,7 @@ export default function HomePage() {
         onClose={() => setIsSettingsOpen(false)}
         onSaveAiConfig={handleSaveAiConfig}
         onChangeLayoutMode={(m) => setLayoutMode(m)}
+        onChangeThemeMode={handleChangeThemeMode}
         onAutoArrangeWall={handleAutoArrangeWall}
         onImportMemories={handleImportMemories}
         onResetDemo={handleResetDemo}

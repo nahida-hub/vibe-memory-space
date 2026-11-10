@@ -14,15 +14,50 @@ import {
   Dices,
   Lock,
   LockOpen,
+  Link2,
+  BookmarkPlus,
+  X,
+  Trash2,
+  Check,
 } from "lucide-react";
-import { MemoryCard, PaperColor } from "@/types/memory";
+import {
+  BoardZone,
+  MemoryCard,
+  PaperColor,
+  ThemeMode,
+} from "@/types/memory";
 import { triggerHaptic } from "@/utils/storageDb";
+
+const BOARD_ZONES_STORAGE_KEY = "vibe_memory_board_zones_v1";
+
+const DEFAULT_BOARD_ZONES: BoardZone[] = [
+  {
+    id: "zone-insight",
+    title: "✦ 灵感与思考碎片",
+    subtitle: "INSIGHTS & SPARKS",
+    x: -290,
+    y: -255,
+    style: "walnut",
+  },
+  {
+    id: "zone-scene",
+    title: "📷 展演与生活现场",
+    subtitle: "EXHIBITIONS & MOMENTS",
+    x: 280,
+    y: -255,
+    style: "brass",
+  },
+];
 
 interface PinboardWallProps {
   memories: MemoryCard[];
   matchedIds: Set<string>;
   hasActiveFilter: boolean;
   activeTag: string | null;
+  themeMode?: ThemeMode;
+  linkingFromCardId?: string | null;
+  onCancelLinking?: () => void;
+  onToggleLinkCard?: (sourceId: string, targetId: string) => void;
   onSelectCard: (card: MemoryCard) => void;
   onTagClick: (tag: string) => void;
   onUpdateCardPosition: (id: string, boardX: number, boardY: number) => void;
@@ -174,25 +209,72 @@ const TAPE_BG: Record<string, string> = {
   coffee: "bg-[#C7B69E]/80 border-[#B29E82]/60",
 };
 
+const ZONE_STYLE_PRESETS: Record<
+  BoardZone["style"],
+  {
+    label: string;
+    container: string;
+    title: string;
+    subtitle: string;
+    nail: string;
+  }
+> = {
+  walnut: {
+    label: "胡桃木牌",
+    container:
+      "bg-gradient-to-br from-[#3A2D23] to-[#261D16] border-[#614C3B] shadow-lg",
+    title: "text-[#F5E6CE]",
+    subtitle: "text-[#B89F82]",
+    nail: "bg-[#D49B4B] border-[#8C5E22]",
+  },
+  brass: {
+    label: "黄铜铭牌",
+    container:
+      "bg-gradient-to-br from-[#F3E2BE] via-[#E5CA94] to-[#D4AF6E] border-[#B28844] shadow-md",
+    title: "text-[#2C2115]",
+    subtitle: "text-[#6B4F28]",
+    nail: "bg-[#4A3825] border-[#2C2115]",
+  },
+  washi: {
+    label: "手账和纸",
+    container:
+      "bg-[#FBF4E3]/95 border-[#D8C6A8] border-dashed shadow-sm",
+    title: "text-[#3D3126]",
+    subtitle: "text-[#8A7966]",
+    nail: "bg-[#5C7457] border-[#3E523A]",
+  },
+};
+
 export default function PinboardWall({
   memories,
   matchedIds,
   hasActiveFilter,
   activeTag,
+  themeMode = "daylight",
+  linkingFromCardId = null,
+  onCancelLinking,
+  onToggleLinkCard,
   onSelectCard,
   onTagClick,
   onUpdateCardPosition,
   onAutoArrangeWall,
   onDoubleClickWall,
-  onOpenAiReview,
   focusCardRequest = null,
   centerTrigger = 0,
 }: PinboardWallProps) {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(0.92);
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
+  const [draggingZoneId, setDraggingZoneId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number }>({
+    dx: 0,
+    dy: 0,
+  });
   const [isArranging, setIsArranging] = useState(false);
   const [isBoardLocked, setIsBoardLocked] = useState(false);
+  const [threadMode, setThreadMode] = useState<"all" | "manual" | "off">("all");
+  const [zones, setZones] = useState<BoardZone[]>(DEFAULT_BOARD_ZONES);
+  const [editingZone, setEditingZone] = useState<BoardZone | null>(null);
   const [spotlightId, setSpotlightId] = useState<string | null>(null);
   const [pinRipple, setPinRipple] = useState<{ x: number; y: number } | null>(
     null
@@ -201,11 +283,37 @@ export default function PinboardWall({
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const cardElsRef = useRef<Record<string, HTMLDivElement | null>>({});
+  const zoneElsRef = useRef<Record<string, HTMLDivElement | null>>({});
   const panRef = useRef(pan);
   const zoomRef = useRef(zoom);
 
   const MIN_ZOOM = 0.002;
   const MAX_ZOOM = 2.8;
+
+  // 加载与持久化桌面分区铭牌
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem(BOARD_ZONES_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setZones(parsed);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const saveZones = useCallback((nextZones: BoardZone[]) => {
+    setZones(nextZones);
+    try {
+      localStorage.setItem(BOARD_ZONES_STORAGE_KEY, JSON.stringify(nextZones));
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const getAdaptiveGridSize = (z: number) => {
     let size = 26 * z;
@@ -243,7 +351,7 @@ export default function PinboardWall({
   const lastRoamIdRef = useRef<string | null>(null);
 
   const interactionRef = useRef<{
-    mode: "none" | "pan" | "card" | "pinch";
+    mode: "none" | "pan" | "card" | "zone" | "pinch";
     startX: number;
     startY: number;
     startPanX: number;
@@ -255,6 +363,7 @@ export default function PinboardWall({
     vy: number;
     movedDistance: number;
     cardId?: string;
+    zoneId?: string;
     cardBaseX?: number;
     cardBaseY?: number;
     cardRotation?: number;
@@ -284,7 +393,6 @@ export default function PinboardWall({
     }
   }, []);
 
-  // 平滑镜头飞跃动画
   const flyCameraTo = useCallback(
     (targetPanX: number, targetPanY: number, targetZoom?: number) => {
       stopAnimation();
@@ -323,14 +431,110 @@ export default function PinboardWall({
     }));
   }, [memories]);
 
-  // 外部触发回中心
+  // 计算每张便签的实时坐标（含拖拽偏移），供红线/麻绳连线动态跟随
+  const cardLiveCoordsMap = useMemo(() => {
+    const map: Record<string, { x: number; y: number; card: MemoryCard }> = {};
+    for (const { card, pos } of positionedCards) {
+      const isDrag = draggingCardId === card.id;
+      map[card.id] = {
+        x: pos.x + (isDrag ? dragOffset.dx : 0),
+        y: pos.y + (isDrag ? dragOffset.dy : 0),
+        card,
+      };
+    }
+    return map;
+  }, [positionedCards, draggingCardId, dragOffset]);
+
+  // 聚合墙面红线连线（手动关联红线 + 同标签同频麻绳线）
+  const boardThreads = useMemo(() => {
+    if (threadMode === "off" && !linkingFromCardId) return [];
+
+    const threads: {
+      key: string;
+      fromId: string;
+      toId: string;
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      kind: "manual" | "tag";
+      label?: string;
+    }[] = [];
+    const seenPairs = new Set<string>();
+
+    // 1. 用户手动关联的思维红线
+    for (const { card } of positionedCards) {
+      const linked = card.linkedCardIds || [];
+      for (const targetId of linked) {
+        const pairKey =
+          card.id < targetId
+            ? `${card.id}::${targetId}`
+            : `${targetId}::${card.id}`;
+        if (seenPairs.has(pairKey)) continue;
+        const p1 = cardLiveCoordsMap[card.id];
+        const p2 = cardLiveCoordsMap[targetId];
+        if (!p1 || !p2) continue;
+        seenPairs.add(pairKey);
+        threads.push({
+          key: `manual-${pairKey}`,
+          fromId: card.id,
+          toId: targetId,
+          x1: p1.x,
+          y1: p1.y - 96,
+          x2: p2.x,
+          y2: p2.y - 96,
+          kind: "manual",
+          label: "关联",
+        });
+      }
+    }
+
+    // 2. 同标签共鸣麻绳连线（当开启 "all" 模式或当前激活了某个 #标签 筛选时展示）
+    if (threadMode === "all") {
+      const tagGroups: Record<string, string[]> = {};
+      for (const { card } of positionedCards) {
+        for (const t of card.tags) {
+          if (activeTag && t !== activeTag) continue;
+          if (!tagGroups[t]) tagGroups[t] = [];
+          tagGroups[t].push(card.id);
+        }
+      }
+
+      for (const [tag, ids] of Object.entries(tagGroups)) {
+        if (ids.length < 2 || ids.length > 6) continue;
+        for (let i = 0; i < ids.length - 1; i++) {
+          const a = ids[i];
+          const b = ids[i + 1];
+          const pairKey = a < b ? `${a}::${b}` : `${b}::${a}`;
+          if (seenPairs.has(pairKey)) continue;
+          const p1 = cardLiveCoordsMap[a];
+          const p2 = cardLiveCoordsMap[b];
+          if (!p1 || !p2) continue;
+          seenPairs.add(pairKey);
+          threads.push({
+            key: `tag-${tag}-${pairKey}`,
+            fromId: a,
+            toId: b,
+            x1: p1.x,
+            y1: p1.y - 96,
+            x2: p2.x,
+            y2: p2.y - 96,
+            kind: "tag",
+            label: `#${tag}`,
+          });
+        }
+      }
+    }
+
+    return threads;
+  }, [positionedCards, cardLiveCoordsMap, threadMode, activeTag, linkingFromCardId]);
+
   useEffect(() => {
     if (centerTrigger > 0) {
       flyCameraTo(0, 0, 0.92);
     }
   }, [centerTrigger, flyCameraTo]);
 
-  // 新建便签或指定聚焦请求时，镜头平滑飞跃到目标便签并高亮
   useEffect(() => {
     if (!focusCardRequest?.id) return;
     const found = positionedCards.find(
@@ -346,7 +550,6 @@ export default function PinboardWall({
     return () => clearTimeout(timer);
   }, [focusCardRequest, positionedCards, flyCameraTo]);
 
-  // 当搜索词或标签筛选触发时，镜头自动平滑飞跃至第一张匹配便签的位置
   useEffect(() => {
     if (!hasActiveFilter) return;
     const firstMatched = positionedCards.find((p) =>
@@ -366,7 +569,6 @@ export default function PinboardWall({
     flyCameraTo(0, 0, 0.92);
   };
 
-  // 🎲 随机漫步：镜头平滑飞向墙上随机一张便签并高亮
   const handleRandomRoam = () => {
     if (positionedCards.length === 0) return;
     triggerHaptic([8, 25, 8]);
@@ -391,7 +593,24 @@ export default function PinboardWall({
     }, 2200);
   };
 
-  // 将屏幕点击坐标转换为墙面 (boardX, boardY) 坐标并在原处钉新便签
+  const handleAddBoardZone = () => {
+    triggerHaptic(10);
+    const centerBoardX = Math.round(-panRef.current.x / zoomRef.current);
+    const centerBoardY = Math.round(-panRef.current.y / zoomRef.current - 120);
+    const styles: BoardZone["style"][] = ["walnut", "brass", "washi"];
+    const newZone: BoardZone = {
+      id: `zone-${Date.now()}`,
+      title: "✦ 新分区主题",
+      subtitle: "CURATED COLLECTION",
+      x: centerBoardX,
+      y: centerBoardY,
+      style: styles[zones.length % styles.length],
+    };
+    const next = [...zones, newZone];
+    saveZones(next);
+    setEditingZone(newZone);
+  };
+
   const triggerPinAtScreenPoint = (clientX: number, clientY: number) => {
     if (isBoardLocked || !onDoubleClickWall || typeof window === "undefined")
       return;
@@ -491,29 +710,78 @@ export default function PinboardWall({
     };
   };
 
-  const updateDraggedCardTransform = (clientX: number, clientY: number) => {
-    const state = interactionRef.current;
-    if (state.mode !== "card" || !state.cardId) return;
+  const beginZoneDrag = (
+    e: React.TouchEvent | React.MouseEvent,
+    zoneId: string,
+    zoneBaseX: number,
+    zoneBaseY: number
+  ) => {
+    if ("touches" in e && e.touches.length > 1) return;
+    if ("button" in e && e.button !== 0) return;
+    e.stopPropagation();
+    stopAnimation();
+    const clientX =
+      "touches" in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY =
+      "touches" in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
 
+    interactionRef.current = {
+      mode: "zone",
+      zoneId,
+      cardBaseX: zoneBaseX,
+      cardBaseY: zoneBaseY,
+      hasLifted: false,
+      startX: clientX,
+      startY: clientY,
+      startPanX: panRef.current.x,
+      startPanY: panRef.current.y,
+      lastX: clientX,
+      lastY: clientY,
+      lastTime: performance.now(),
+      vx: 0,
+      vy: 0,
+      movedDistance: 0,
+    };
+  };
+
+  const updateDraggedItemTransform = (clientX: number, clientY: number) => {
+    const state = interactionRef.current;
     const dx = clientX - state.startX;
     const dy = clientY - state.startY;
     state.lastX = clientX;
     state.lastY = clientY;
     state.movedDistance = Math.hypot(dx, dy);
 
-    if (!state.hasLifted && state.movedDistance > 2) {
-      state.hasLifted = true;
-      triggerHaptic(8);
-      setDraggingCardId(state.cardId);
-    }
+    const boardDx = dx / zoomRef.current;
+    const boardDy = dy / zoomRef.current;
 
-    const el = cardElsRef.current[state.cardId];
-    if (el) {
-      const boardDx = dx / zoomRef.current;
-      const boardDy = dy / zoomRef.current;
-      const nextX = (state.cardBaseX || 0) + boardDx - 125;
-      const nextY = (state.cardBaseY || 0) + boardDy - 110;
-      el.style.transform = `translate3d(${nextX}px, ${nextY}px, 0) rotate(0deg) scale(1.03)`;
+    if (state.mode === "card" && state.cardId) {
+      if (!state.hasLifted && state.movedDistance > 2) {
+        state.hasLifted = true;
+        triggerHaptic(8);
+        setDraggingCardId(state.cardId);
+      }
+      if (state.hasLifted) {
+        setDragOffset({ dx: boardDx, dy: boardDy });
+      }
+      const el = cardElsRef.current[state.cardId];
+      if (el) {
+        const nextX = (state.cardBaseX || 0) + boardDx - 125;
+        const nextY = (state.cardBaseY || 0) + boardDy - 110;
+        el.style.transform = `translate3d(${nextX}px, ${nextY}px, 0) rotate(0deg) scale(1.03)`;
+      }
+    } else if (state.mode === "zone" && state.zoneId) {
+      if (!state.hasLifted && state.movedDistance > 2) {
+        state.hasLifted = true;
+        triggerHaptic(8);
+        setDraggingZoneId(state.zoneId);
+      }
+      const el = zoneElsRef.current[state.zoneId];
+      if (el) {
+        const nextX = (state.cardBaseX || 0) + boardDx - 115;
+        const nextY = (state.cardBaseY || 0) + boardDy - 28;
+        el.style.transform = `translate3d(${nextX}px, ${nextY}px, 0) scale(1.04)`;
+      }
     }
   };
 
@@ -521,6 +789,7 @@ export default function PinboardWall({
     if (e.touches.length === 2) {
       stopAnimation();
       setDraggingCardId(null);
+      setDraggingZoneId(null);
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       const midX =
@@ -542,7 +811,11 @@ export default function PinboardWall({
       return;
     }
 
-    if (e.touches.length === 1 && interactionRef.current.mode !== "card") {
+    if (
+      e.touches.length === 1 &&
+      interactionRef.current.mode !== "card" &&
+      interactionRef.current.mode !== "zone"
+    ) {
       beginCanvasPan(e.touches[0].clientX, e.touches[0].clientY);
     }
   };
@@ -580,8 +853,8 @@ export default function PinboardWall({
     if (e.touches.length !== 1) return;
     const touch = e.touches[0];
 
-    if (state.mode === "card" && state.cardId) {
-      updateDraggedCardTransform(touch.clientX, touch.clientY);
+    if (state.mode === "card" || state.mode === "zone") {
+      updateDraggedItemTransform(touch.clientX, touch.clientY);
       return;
     }
 
@@ -625,8 +898,21 @@ export default function PinboardWall({
         onUpdateCardPosition(state.cardId, finalX, finalY);
       }
       setDraggingCardId(null);
+      setDragOffset({ dx: 0, dy: 0 });
+    } else if (state.mode === "zone" && state.zoneId) {
+      const boardDx = (state.lastX - state.startX) / zoomRef.current;
+      const boardDy = (state.lastY - state.startY) / zoomRef.current;
+      const finalX = Math.round((state.cardBaseX || 0) + boardDx);
+      const finalY = Math.round((state.cardBaseY || 0) + boardDy);
+
+      if (state.movedDistance > 2) {
+        const nextZones = zones.map((z) =>
+          z.id === state.zoneId ? { ...z, x: finalX, y: finalY } : z
+        );
+        saveZones(nextZones);
+      }
+      setDraggingZoneId(null);
     } else if (state.mode === "pan") {
-      // 检测移动端双击空白墙面直接钉便签
       if (
         state.movedDistance < 10 &&
         e &&
@@ -664,7 +950,12 @@ export default function PinboardWall({
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0 || interactionRef.current.mode === "card") return;
+    if (
+      e.button !== 0 ||
+      interactionRef.current.mode === "card" ||
+      interactionRef.current.mode === "zone"
+    )
+      return;
     beginCanvasPan(e.clientX, e.clientY);
   };
 
@@ -672,8 +963,8 @@ export default function PinboardWall({
     const state = interactionRef.current;
     if (state.mode === "none") return;
 
-    if (state.mode === "card" && state.cardId) {
-      updateDraggedCardTransform(e.clientX, e.clientY);
+    if (state.mode === "card" || state.mode === "zone") {
+      updateDraggedItemTransform(e.clientX, e.clientY);
       return;
     }
 
@@ -728,6 +1019,16 @@ export default function PinboardWall({
     }
   };
 
+  const linkingSourceCard = useMemo(
+    () =>
+      linkingFromCardId
+        ? memories.find((m) => m.id === linkingFromCardId) || null
+        : null,
+    [linkingFromCardId, memories]
+  );
+
+  const isNight = themeMode === "night_lamp";
+
   return (
     <div
       ref={containerRef}
@@ -747,6 +1048,39 @@ export default function PinboardWall({
       }}
       className="fixed inset-0 overflow-hidden select-none touch-none cursor-grab active:cursor-grabbing wall-dot-matrix"
     >
+      {/* 深夜台灯模式：书桌暖光锥柔光层 */}
+      {isNight && (
+        <div className="fixed inset-0 pointer-events-none lamp-ambient-cone z-[1]" />
+      )}
+
+      {/* 墙面红线牵线引导横幅 */}
+      {linkingSourceCard && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="fixed top-18 left-1/2 -translate-x-1/2 z-40 px-3 w-full max-w-md pointer-events-auto"
+        >
+          <div className="rounded-2xl bg-[#2C251E]/95 text-[#FBF6E9] px-4 py-2.5 shadow-xl border border-[#B84A39] flex items-center justify-between gap-2 backdrop-blur-md">
+            <div className="flex items-center gap-2 min-w-0">
+              <Link2 className="w-4 h-4 text-[#E06D53] shrink-0 animate-pulse" />
+              <span className="text-xs truncate">
+                正在从「
+                {linkingSourceCard.title ||
+                  linkingSourceCard.summary ||
+                  linkingSourceCard.rawContent.slice(0, 12)}
+                」牵线：请点击目标便签
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onCancelLinking?.()}
+              className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-[#E8C589] shrink-0 cursor-pointer"
+            >
+              完成
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 2D 便签画布原点置于屏幕正中央 */}
       <div
         ref={canvasRef}
@@ -754,8 +1088,157 @@ export default function PinboardWall({
           transform: `translate3d(${panRef.current.x}px, ${panRef.current.y}px, 0) scale(${zoomRef.current})`,
           transformOrigin: "0 0",
         }}
-        className="absolute left-1/2 top-1/2 w-0 h-0 will-change-transform"
+        className="absolute left-1/2 top-1/2 w-0 h-0 will-change-transform z-[2]"
       >
+        {/* 1. 桌面分区木牌 / 铭牌贴纸层 (Board Zones) */}
+        {zones.map((zone) => {
+          const stylePreset =
+            ZONE_STYLE_PRESETS[zone.style] || ZONE_STYLE_PRESETS.walnut;
+          const isDraggingThisZone = draggingZoneId === zone.id;
+          return (
+            <div
+              key={zone.id}
+              ref={(el) => {
+                zoneElsRef.current[zone.id] = el;
+              }}
+              onTouchStart={(e) => {
+                if (isBoardLocked) return;
+                beginZoneDrag(e, zone.id, zone.x, zone.y);
+              }}
+              onMouseDown={(e) => {
+                if (isBoardLocked) return;
+                beginZoneDrag(e, zone.id, zone.x, zone.y);
+              }}
+              onClick={(e) => {
+                if (isBoardLocked) return;
+                e.stopPropagation();
+                if (interactionRef.current.movedDistance > 6) return;
+                triggerHaptic(8);
+                setEditingZone(zone);
+              }}
+              style={{
+                transform: `translate3d(${zone.x - 115}px, ${
+                  zone.y - 28
+                }px, 0) scale(${isDraggingThisZone ? 1.04 : 1})`,
+                zIndex: isDraggingThisZone ? 45 : 5,
+              }}
+              className={`absolute w-[230px] rounded-2xl border px-4 py-2.5 flex items-center justify-between gap-2 will-change-transform ${
+                stylePreset.container
+              } ${
+                isBoardLocked
+                  ? "pointer-events-none"
+                  : isDraggingThisZone
+                  ? "cursor-grabbing"
+                  : "cursor-grab"
+              }`}
+            >
+              <span
+                className={`w-2.5 h-2.5 rounded-full border shrink-0 ${stylePreset.nail}`}
+              />
+              <div className="min-w-0 flex-1 text-center">
+                <div
+                  className={`font-serif-notebook text-xs font-bold truncate ${stylePreset.title}`}
+                >
+                  {zone.title}
+                </div>
+                {zone.subtitle && (
+                  <div
+                    className={`text-[9px] font-mono tracking-widest uppercase truncate mt-0.5 ${stylePreset.subtitle}`}
+                  >
+                    {zone.subtitle}
+                  </div>
+                )}
+              </div>
+              <span
+                className={`w-2.5 h-2.5 rounded-full border shrink-0 ${stylePreset.nail}`}
+              />
+            </div>
+          );
+        })}
+
+        {/* 2. 便签图钉红线 / 同频麻绳 SVG 连线层（置于卡片顶层图钉高度，或卡片之间） */}
+        {boardThreads.length > 0 && (
+          <svg
+            width="1"
+            height="1"
+            className="overflow-visible pointer-events-none absolute left-0 top-0 z-[25]"
+          >
+            {boardThreads.map((t) => {
+              const dx = t.x2 - t.x1;
+              const dy = t.y2 - t.y1;
+              const dist = Math.hypot(dx, dy);
+              const sag = Math.min(85, Math.max(22, dist * 0.15));
+              const cx = (t.x1 + t.x2) / 2;
+              const cy = (t.y1 + t.y2) / 2 + sag;
+              const pathD = `M ${t.x1} ${t.y1} Q ${cx} ${cy} ${t.x2} ${t.y2}`;
+              // 二次贝塞尔曲线中点 (t=0.5)
+              const midX = 0.25 * t.x1 + 0.5 * cx + 0.25 * t.x2;
+              const midY = 0.25 * t.y1 + 0.5 * cy + 0.25 * t.y2;
+              const isManual = t.kind === "manual";
+
+              return (
+                <g key={t.key}>
+                  {/* 麻绳/红线柔和投影 */}
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke="rgba(28, 20, 12, 0.22)"
+                    strokeWidth={isManual ? 3.5 : 2.5}
+                    transform="translate(0, 4)"
+                  />
+                  {/* 主连线 */}
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke={isManual ? "#C44D3B" : "#C88A3E"}
+                    strokeWidth={isManual ? 2.4 : 1.8}
+                    strokeDasharray={isManual ? undefined : "6 5"}
+                    strokeLinecap="round"
+                  />
+                  {/* 两端图钉绳结圆环 */}
+                  <circle
+                    cx={t.x1}
+                    cy={t.y1}
+                    r={4.2}
+                    fill={isManual ? "#C44D3B" : "#C88A3E"}
+                  />
+                  <circle
+                    cx={t.x2}
+                    cy={t.y2}
+                    r={4.2}
+                    fill={isManual ? "#C44D3B" : "#C88A3E"}
+                  />
+                  {/* 曲线中点微章 */}
+                  {t.label && dist > 150 && (
+                    <g transform={`translate(${midX}, ${midY})`}>
+                      <rect
+                        x={-28}
+                        y={-10}
+                        width={56}
+                        height={20}
+                        rx={10}
+                        fill={isManual ? "#B84A39" : "#EFE3CC"}
+                        stroke={isManual ? "#8E3325" : "#CBB898"}
+                        strokeWidth={1}
+                      />
+                      <text
+                        x={0}
+                        y={3.5}
+                        textAnchor="middle"
+                        fontSize="9.5"
+                        fontWeight="600"
+                        fill={isManual ? "#FFFDF8" : "#5E4D3B"}
+                      >
+                        {t.label.slice(0, 5)}
+                      </text>
+                    </g>
+                  )}
+                </g>
+              );
+            })}
+          </svg>
+        )}
+
         {/* 双击墙面空白处时的定位图钉波纹 */}
         {pinRipple && (
           <div
@@ -770,17 +1253,16 @@ export default function PinboardWall({
 
         {positionedCards.map(({ card, pos }) => {
           const isDraggingThis = draggingCardId === card.id;
-          const isSpotlight = spotlightId === card.id;
-          const activeDeltaX =
-            isDraggingThis && interactionRef.current.cardId === card.id
-              ? (interactionRef.current.lastX - interactionRef.current.startX) /
-                zoom
-              : 0;
-          const activeDeltaY =
-            isDraggingThis && interactionRef.current.cardId === card.id
-              ? (interactionRef.current.lastY - interactionRef.current.startY) /
-                zoom
-              : 0;
+          const isSpotlight =
+            spotlightId === card.id || linkingFromCardId === card.id;
+          const isLinkedToSource =
+            Boolean(linkingFromCardId) &&
+            linkingFromCardId !== card.id &&
+            ((card.linkedCardIds || []).includes(linkingFromCardId!) ||
+              (linkingSourceCard?.linkedCardIds || []).includes(card.id));
+
+          const activeDeltaX = isDraggingThis ? dragOffset.dx : 0;
+          const activeDeltaY = isDraggingThis ? dragOffset.dy : 0;
           const x = pos.x + activeDeltaX;
           const y = pos.y + activeDeltaY;
           const isMatched = !hasActiveFilter || matchedIds.has(card.id);
@@ -827,6 +1309,14 @@ export default function PinboardWall({
                 e.stopPropagation();
                 if (interactionRef.current.movedDistance > 6) return;
                 triggerHaptic(8);
+                if (linkingFromCardId) {
+                  if (linkingFromCardId === card.id) {
+                    onCancelLinking?.();
+                  } else {
+                    onToggleLinkCard?.(linkingFromCardId, card.id);
+                  }
+                  return;
+                }
                 onSelectCard(card);
               }}
               className={`absolute w-[248px] sm:w-[268px] will-change-transform ${
@@ -836,6 +1326,8 @@ export default function PinboardWall({
               } ${
                 isBoardLocked
                   ? "pointer-events-none"
+                  : linkingFromCardId
+                  ? "cursor-pointer"
                   : isDraggingThis
                   ? "cursor-grabbing"
                   : "cursor-grab"
@@ -868,7 +1360,7 @@ export default function PinboardWall({
                 </div>
               )}
 
-              {/* 便签纸张主体（多彩纸色 + 微卷边立体阴影） */}
+              {/* 便签纸张主体 */}
               {card.type === "ai_insight" && (
                 <div
                   className={`rounded-xl ${paperStyle.bg} border ${
@@ -876,6 +1368,10 @@ export default function PinboardWall({
                   } p-4 pt-5 sticky-note-shadow ${
                     isDraggingThis
                       ? "shadow-2xl ring-2 ring-[#5C7457]/40"
+                      : linkingFromCardId === card.id
+                      ? "ring-2 ring-[#C44D3B] shadow-xl"
+                      : isLinkedToSource
+                      ? "ring-2 ring-[#C44D3B]/60"
                       : isSpotlight
                       ? "ring-2 ring-[#C87D32] shadow-xl"
                       : ""
@@ -886,9 +1382,14 @@ export default function PinboardWall({
                       <Sparkles className="w-3 h-3" />
                       灵感便签
                     </span>
-                    {card.isPinned && (
-                      <Pin className="w-3 h-3 text-[#C87D32] fill-current" />
-                    )}
+                    <div className="flex items-center gap-1">
+                      {(card.linkedCardIds?.length || 0) > 0 && (
+                        <Link2 className="w-3 h-3 text-[#B84A39]" />
+                      )}
+                      {card.isPinned && (
+                        <Pin className="w-3 h-3 text-[#C87D32] fill-current" />
+                      )}
+                    </div>
                   </div>
 
                   <p className="font-serif-notebook text-[16px] leading-relaxed font-semibold text-[#2A231C] line-clamp-4">
@@ -932,6 +1433,10 @@ export default function PinboardWall({
                   className={`rounded-xl bg-[#FFFDF9] p-3 pb-3.5 polaroid-shadow ${
                     isDraggingThis
                       ? "shadow-2xl ring-2 ring-[#C87D32]/40"
+                      : linkingFromCardId === card.id
+                      ? "ring-2 ring-[#C44D3B] shadow-xl"
+                      : isLinkedToSource
+                      ? "ring-2 ring-[#C44D3B]/60"
                       : isSpotlight
                       ? "ring-2 ring-[#C87D32] shadow-xl"
                       : ""
@@ -982,6 +1487,10 @@ export default function PinboardWall({
                   className={`rounded-xl p-[1px] bg-gradient-to-br from-[#DDA14B] via-[#E8C589] to-[#C87D32] sticky-note-shadow ${
                     isDraggingThis
                       ? "shadow-2xl"
+                      : linkingFromCardId === card.id
+                      ? "ring-2 ring-[#C44D3B] shadow-xl"
+                      : isLinkedToSource
+                      ? "ring-2 ring-[#C44D3B]/60"
                       : isSpotlight
                       ? "ring-2 ring-[#C87D32] shadow-xl"
                       : ""
@@ -1027,51 +1536,226 @@ export default function PinboardWall({
         })}
       </div>
 
-      {/* 左下角极简画布罗盘：上下分层排布，彻底避免与右下角 ➕ 按钮重叠 */}
+      {/* 点击桌面分区牌弹出的轻量编辑窗 */}
+      {editingZone && (
+        <div
+          onClick={() => setEditingZone(null)}
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-3xl bg-[#FBF6E9] border border-[#DFD2BA] p-5 space-y-4 paper-shadow"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-serif-notebook text-sm font-bold text-[#2C251E]">
+                编辑桌面分区铭牌
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingZone(null)}
+                className="p-1 rounded-full text-[#7E7060] hover:bg-black/5 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-medium text-[#6E6050] mb-1">
+                  分区主标题
+                </label>
+                <input
+                  type="text"
+                  value={editingZone.title}
+                  onChange={(e) =>
+                    setEditingZone({ ...editingZone, title: e.target.value })
+                  }
+                  placeholder="例如：✦ 2026 秋日看展"
+                  className="w-full rounded-xl bg-[#FFFDF8] border border-[#DFD2BA] px-3 py-2 text-xs text-[#2C251E] focus:outline-none focus:border-[#C87D32]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-[#6E6050] mb-1">
+                  英文/副标题（可选）
+                </label>
+                <input
+                  type="text"
+                  value={editingZone.subtitle || ""}
+                  onChange={(e) =>
+                    setEditingZone({
+                      ...editingZone,
+                      subtitle: e.target.value,
+                    })
+                  }
+                  placeholder="例如：AUTUMN EXHIBITIONS"
+                  className="w-full rounded-xl bg-[#FFFDF8] border border-[#DFD2BA] px-3 py-2 text-xs font-mono text-[#2C251E] focus:outline-none focus:border-[#C87D32]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-[#6E6050] mb-1.5">
+                  铭牌材质
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["walnut", "brass", "washi"] as const).map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() =>
+                        setEditingZone({ ...editingZone, style: st })
+                      }
+                      className={`py-2 px-2 rounded-xl text-xs font-semibold border cursor-pointer ${
+                        editingZone.style === st
+                          ? "bg-[#2C251E] text-[#FBF6E9] border-[#2C251E]"
+                          : "bg-[#FFFDF8] text-[#5E5244] border-[#DFD2BA]"
+                      }`}
+                    >
+                      {ZONE_STYLE_PRESETS[st].label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(10);
+                  const next = zones.filter((z) => z.id !== editingZone.id);
+                  saveZones(next);
+                  setEditingZone(null);
+                }}
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-medium text-red-700 hover:bg-red-50 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>移除此铭牌</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(10);
+                  const next = zones.map((z) =>
+                    z.id === editingZone.id ? editingZone : z
+                  );
+                  saveZones(next);
+                  setEditingZone(null);
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-[#2C251E] text-[#FBF6E9] cursor-pointer"
+              >
+                <Check className="w-3.5 h-3.5 text-[#E8C589]" />
+                <span>保存铭牌</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 左下角极简画布罗盘：上下分层排布 */}
       <div
         onClick={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
         className="fixed bottom-6 left-4 z-30 pb-safe flex flex-col items-start gap-2 max-w-[calc(100vw-6.5rem)]"
       >
-        {/* 独立看板锁定按钮：开启后触碰便签不点开详情、不挪动单张便签，全屏纯粹顺滑滑动 */}
-        <button
-          type="button"
-          onClick={() => {
-            triggerHaptic(10);
-            setIsBoardLocked((prev) => !prev);
-            setDraggingCardId(null);
-          }}
-          title={
-            isBoardLocked
-              ? "当前为纯滑动模式（点击解锁便签交互）"
-              : "锁定看板（开启后触碰便签不打开详情、不移动单张卡片，全屏顺滑滑动）"
-          }
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border shadow-md transition-all cursor-pointer ${
-            isBoardLocked
-              ? "bg-[#2C251E] text-[#E8C589] border-[#5E5042] ring-2 ring-[#C87D32]/50"
-              : "bg-[#FFFDF8]/92 backdrop-blur-md text-[#4A3F33] border-[#DED2BA] hover:bg-[#EFE7D6]"
+        {/* 上排：锁定滑动 + 红线连线切换 + 新增分区牌 */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic(10);
+              setIsBoardLocked((prev) => !prev);
+              setDraggingCardId(null);
+            }}
+            title={
+              isBoardLocked
+                ? "当前为纯滑动模式（点击解锁便签交互）"
+                : "锁定看板（开启后触碰便签不打开详情、不移动单张卡片，全屏顺滑滑动）"
+            }
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border shadow-md transition-all cursor-pointer ${
+              isBoardLocked
+                ? "bg-[#2C251E] text-[#E8C589] border-[#5E5042] ring-2 ring-[#C87D32]/50"
+                : isNight
+                ? "bg-[#261F1A]/92 text-[#EADBC4] border-[#4A3B2F]"
+                : "bg-[#FFFDF8]/92 backdrop-blur-md text-[#4A3F33] border-[#DED2BA] hover:bg-[#EFE7D6]"
+            }`}
+          >
+            {isBoardLocked ? (
+              <>
+                <Lock className="w-3.5 h-3.5 text-[#E8C589]" />
+                <span>仅滑动</span>
+              </>
+            ) : (
+              <>
+                <LockOpen className="w-3.5 h-3.5 text-[#C87D32]" />
+                <span>锁定</span>
+              </>
+            )}
+          </button>
+
+          {/* 思维红线 / 麻绳连线模式切换 */}
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic(8);
+              setThreadMode((prev) =>
+                prev === "all" ? "manual" : prev === "manual" ? "off" : "all"
+              );
+            }}
+            title="切换便签红线与同标签麻绳连线"
+            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-semibold border shadow-md transition-all cursor-pointer ${
+              threadMode !== "off"
+                ? "bg-[#B84A39] text-[#FFFDF8] border-[#963829]"
+                : isNight
+                ? "bg-[#261F1A]/92 text-[#B8A690] border-[#4A3B2F]"
+                : "bg-[#FFFDF8]/92 text-[#6E6050] border-[#DED2BA]"
+            }`}
+          >
+            <Link2 className="w-3.5 h-3.5" />
+            <span>
+              {threadMode === "all"
+                ? "红线:全显"
+                : threadMode === "manual"
+                ? "红线:手动"
+                : "红线:关"}
+            </span>
+          </button>
+
+          {/* 新增桌面分区木牌 */}
+          <button
+            type="button"
+            onClick={handleAddBoardZone}
+            title="在当前视野放置一块桌面分区铭牌"
+            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-semibold border shadow-md transition-all cursor-pointer ${
+              isNight
+                ? "bg-[#261F1A]/92 text-[#EADBC4] border-[#4A3B2F] hover:bg-[#332922]"
+                : "bg-[#FFFDF8]/92 backdrop-blur-md text-[#4A3F33] border-[#DED2BA] hover:bg-[#EFE7D6]"
+            }`}
+          >
+            <BookmarkPlus className="w-3.5 h-3.5 text-[#C87D32]" />
+            <span>+分区牌</span>
+          </button>
+        </div>
+
+        {/* 下排：罗盘导航条 */}
+        <div
+          className={`flex items-center backdrop-blur-md border rounded-full p-1 shadow-md ${
+            isNight
+              ? "bg-[#261F1A]/92 border-[#4A3B2F]"
+              : "bg-[#FFFDF8]/90 border-[#DED2BA]"
           }`}
         >
-          {isBoardLocked ? (
-            <>
-              <Lock className="w-3.5 h-3.5 text-[#E8C589]" />
-              <span>仅滑动中</span>
-            </>
-          ) : (
-            <>
-              <LockOpen className="w-3.5 h-3.5 text-[#C87D32]" />
-              <span>锁定滑动</span>
-            </>
-          )}
-        </button>
-
-        <div className="flex items-center bg-[#FFFDF8]/90 backdrop-blur-md border border-[#DED2BA] rounded-full p-1 shadow-md">
           <button
             type="button"
             onClick={handleRecenter}
             title="回到中心"
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-medium text-[#4A3F33] hover:bg-[#EFE7D6] cursor-pointer"
+            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-medium cursor-pointer ${
+              isNight
+                ? "text-[#EADBC4] hover:bg-white/10"
+                : "text-[#4A3F33] hover:bg-[#EFE7D6]"
+            }`}
           >
             <Compass className="w-3.5 h-3.5 text-[#C87D32]" />
             <span>中心</span>
@@ -1080,7 +1764,11 @@ export default function PinboardWall({
             type="button"
             onClick={handleRandomRoam}
             title="随机漫步到一张便签"
-            className="p-1.5 rounded-full text-[#6E6050] hover:bg-[#EFE7D6] cursor-pointer"
+            className={`p-1.5 rounded-full cursor-pointer ${
+              isNight
+                ? "text-[#C4B299] hover:bg-white/10"
+                : "text-[#6E6050] hover:bg-[#EFE7D6]"
+            }`}
           >
             <Dices className="w-3.5 h-3.5 text-[#5C7457]" />
           </button>
@@ -1099,7 +1787,11 @@ export default function PinboardWall({
               );
             }}
             title="持续缩小"
-            className="p-1.5 rounded-full text-[#6E6050] hover:bg-[#EFE7D6] cursor-pointer"
+            className={`p-1.5 rounded-full cursor-pointer ${
+              isNight
+                ? "text-[#C4B299] hover:bg-white/10"
+                : "text-[#6E6050] hover:bg-[#EFE7D6]"
+            }`}
           >
             <ZoomOut className="w-3.5 h-3.5" />
           </button>
@@ -1118,7 +1810,11 @@ export default function PinboardWall({
               );
             }}
             title="放大"
-            className="p-1.5 rounded-full text-[#6E6050] hover:bg-[#EFE7D6] cursor-pointer"
+            className={`p-1.5 rounded-full cursor-pointer ${
+              isNight
+                ? "text-[#C4B299] hover:bg-white/10"
+                : "text-[#6E6050] hover:bg-[#EFE7D6]"
+            }`}
           >
             <ZoomIn className="w-3.5 h-3.5" />
           </button>
@@ -1131,7 +1827,11 @@ export default function PinboardWall({
               setTimeout(() => setIsArranging(false), 360);
             }}
             title="重排便签"
-            className="p-1.5 rounded-full text-[#6E6050] hover:bg-[#EFE7D6] cursor-pointer"
+            className={`p-1.5 rounded-full cursor-pointer ${
+              isNight
+                ? "text-[#C4B299] hover:bg-white/10"
+                : "text-[#6E6050] hover:bg-[#EFE7D6]"
+            }`}
           >
             <LayoutGrid className="w-3.5 h-3.5" />
           </button>

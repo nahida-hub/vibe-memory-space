@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   X,
   Sparkles,
@@ -14,6 +14,8 @@ import {
   Check,
   Wand2,
   ImageDown,
+  Link2,
+  Unlink,
 } from "lucide-react";
 import { MemoryCard, PaperColor } from "@/types/memory";
 import {
@@ -25,6 +27,7 @@ import { triggerHaptic } from "@/utils/storageDb";
 
 interface NoteDetailModalProps {
   card: MemoryCard | null;
+  allMemories?: MemoryCard[];
   isRedistilling?: boolean;
   onClose: () => void;
   onEdit: (card: MemoryCard) => void;
@@ -34,10 +37,14 @@ interface NoteDetailModalProps {
   onRedistill: (id: string) => void;
   onTagClick: (tag: string) => void;
   onOpenLightbox: (images: string[], startIndex: number, title?: string) => void;
+  onSelectLinkedCard?: (card: MemoryCard) => void;
+  onToggleLinkCard?: (sourceId: string, targetId: string) => void;
+  onStartWallLinking?: (sourceId: string) => void;
 }
 
 export default function NoteDetailModal({
   card,
+  allMemories = [],
   isRedistilling = false,
   onClose,
   onEdit,
@@ -47,10 +54,23 @@ export default function NoteDetailModal({
   onRedistill,
   onTagClick,
   onOpenLightbox,
+  onSelectLinkedCard,
+  onToggleLinkCard,
+  onStartWallLinking,
 }: NoteDetailModalProps) {
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isExportingImg, setIsExportingImg] = useState(false);
+
+  const linkedCards = useMemo(() => {
+    if (!card) return [];
+    const directSet = new Set(card.linkedCardIds || []);
+    return allMemories.filter(
+      (m) =>
+        m.id !== card.id &&
+        (directSet.has(m.id) || (m.linkedCardIds || []).includes(card.id))
+    );
+  }, [card, allMemories]);
 
   if (!card) return null;
 
@@ -139,11 +159,25 @@ export default function NoteDetailModal({
                 />
               </button>
             )}
+            {onStartWallLinking && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(8);
+                  onClose();
+                  onStartWallLinking(card.id);
+                }}
+                title="在墙上与其他便签牵线关联"
+                className="p-2 rounded-full text-[#B84A39] hover:bg-black/5 transition-colors cursor-pointer"
+              >
+                <Link2 className="w-4 h-4" />
+              </button>
+            )}
             <button
               type="button"
               onClick={handleExportImage}
               disabled={isExportingImg}
-              title="生成便签分享图"
+              title="生成便签分享图（支持3种版式）"
               className="p-2 rounded-full text-[#7E7060] hover:bg-black/5 transition-colors cursor-pointer"
             >
               <ImageDown
@@ -266,6 +300,72 @@ export default function NoteDetailModal({
           <div className="p-4 rounded-2xl bg-white/65 border border-[#EAE0CA] text-sm text-[#3F352B] whitespace-pre-wrap leading-7 notebook-ruled-lines">
             {card.rawContent}
           </div>
+
+          {/* 红线关联便签区 */}
+          {(linkedCards.length > 0 || onStartWallLinking) && (
+            <div className="p-3.5 rounded-2xl bg-black/[0.025] border border-dashed border-[#D8CBB5] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-[#6E5D4B] flex items-center gap-1.5">
+                  <Link2 className="w-3.5 h-3.5 text-[#B84A39]" />
+                  <span>思维红线关联 ({linkedCards.length})</span>
+                </span>
+                {onStartWallLinking && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic(8);
+                      onClose();
+                      onStartWallLinking(card.id);
+                    }}
+                    className="text-[11px] font-medium text-[#B84A39] hover:underline cursor-pointer"
+                  >
+                    + 在便签墙上牵线
+                  </button>
+                )}
+              </div>
+
+              {linkedCards.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {linkedCards.map((linked) => (
+                    <div
+                      key={linked.id}
+                      className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-white/80 border border-[#DFD2BA] text-xs text-[#3F3428]"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic(6);
+                          onSelectLinkedCard?.(linked);
+                        }}
+                        className="truncate max-w-[180px] hover:text-[#B84A39] cursor-pointer"
+                      >
+                        {linked.title ||
+                          linked.summary ||
+                          linked.rawContent.slice(0, 16)}
+                      </button>
+                      {onToggleLinkCard && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic(8);
+                            onToggleLinkCard(card.id, linked.id);
+                          }}
+                          title="解开红线关联"
+                          className="p-0.5 rounded-full text-[#9A8B7A] hover:text-red-600 cursor-pointer"
+                        >
+                          <Unlink className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-[#8C7E6D]">
+                  可将有内在联系的灵感、展览或高光时刻用红线串联在便签墙上。
+                </p>
+              )}
+            </div>
+          )}
 
           {/* 底部：标签 + 便签纸色快速切换圆点 */}
           <div className="flex items-center justify-between gap-2 flex-wrap pt-1">
