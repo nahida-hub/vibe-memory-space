@@ -17,6 +17,7 @@ import {
   MemoryCard,
   PaperColor,
   ThemeMode,
+  ThreadColor,
 } from "@/types/memory";
 import {
   AiConfig,
@@ -471,8 +472,12 @@ export default function HomePage() {
     }
   };
 
-  // 切换两张便签之间的红线关联（已关联则解开，未关联则双向/单向记录连线）
-  const handleToggleLinkCard = (sourceId: string, targetId: string) => {
+  // 切换两张便签之间的连线关联（若已关联但选择了新颜色则直接换色；若颜色一致或未传色则解开；未关联则以所选颜色连线）
+  const handleToggleLinkCard = (
+    sourceId: string,
+    targetId: string,
+    color?: ThreadColor
+  ) => {
     if (!sourceId || !targetId || sourceId === targetId) return;
     triggerHaptic([8, 20, 8]);
     setMemories((prev) => {
@@ -484,6 +489,37 @@ export default function HomePage() {
         (sourceCard.linkedCardIds || []).includes(targetId) ||
         (targetCard.linkedCardIds || []).includes(sourceId);
 
+      const existingColor: ThreadColor =
+        sourceCard.linkedCardColors?.[targetId] ||
+        targetCard.linkedCardColors?.[sourceId] ||
+        "crimson";
+
+      // 若已连接且传入了不同的新颜色，则更新该条连线的颜色而不解绑
+      if (isAlreadyLinked && color && color !== existingColor) {
+        return prev.map((item) => {
+          if (item.id !== sourceId && item.id !== targetId) return item;
+          const otherId = item.id === sourceId ? targetId : sourceId;
+          const curList = Array.from(
+            new Set([...(item.linkedCardIds || []), otherId])
+          );
+          const nextColors = {
+            ...(item.linkedCardColors || {}),
+            [otherId]: color,
+          };
+          const updated = {
+            ...item,
+            linkedCardIds: curList,
+            linkedCardColors: nextColors,
+          };
+          if (selectedCard?.id === item.id) {
+            setSelectedCard(updated);
+          }
+          return updated;
+        });
+      }
+
+      const chosenColor: ThreadColor = color || "crimson";
+
       return prev.map((item) => {
         if (item.id !== sourceId && item.id !== targetId) return item;
         const otherId = item.id === sourceId ? targetId : sourceId;
@@ -491,13 +527,50 @@ export default function HomePage() {
         const nextList = isAlreadyLinked
           ? curList.filter((id) => id !== otherId)
           : Array.from(new Set([...curList, otherId]));
-        const updated = { ...item, linkedCardIds: nextList };
+        const nextColors = { ...(item.linkedCardColors || {}) };
+        if (isAlreadyLinked) {
+          delete nextColors[otherId];
+        } else {
+          nextColors[otherId] = chosenColor;
+        }
+        const updated = {
+          ...item,
+          linkedCardIds: nextList,
+          linkedCardColors: nextColors,
+        };
         if (selectedCard?.id === item.id) {
           setSelectedCard(updated);
         }
         return updated;
       });
     });
+  };
+
+  // 单独修改某条已有连线的颜色
+  const handleUpdatePairThreadColor = (
+    sourceId: string,
+    targetId: string,
+    color: ThreadColor
+  ) => {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    setMemories((prev) =>
+      prev.map((item) => {
+        if (item.id !== sourceId && item.id !== targetId) return item;
+        const otherId = item.id === sourceId ? targetId : sourceId;
+        const nextColors = {
+          ...(item.linkedCardColors || {}),
+          [otherId]: color,
+        };
+        const updated = {
+          ...item,
+          linkedCardColors: nextColors,
+        };
+        if (selectedCard?.id === item.id) {
+          setSelectedCard(updated);
+        }
+        return updated;
+      })
+    );
   };
 
   const handleImportMemories = (
@@ -694,6 +767,7 @@ export default function HomePage() {
           linkingFromCardId={linkingFromCardId}
           onCancelLinking={() => setLinkingFromCardId(null)}
           onToggleLinkCard={handleToggleLinkCard}
+          onUpdatePairThreadColor={handleUpdatePairThreadColor}
           onSelectCard={(card) => setSelectedCard(card)}
           onTagClick={(tag) => setActiveTag(activeTag === tag ? null : tag)}
           onUpdateCardPosition={handleUpdateCardPosition}
@@ -835,6 +909,7 @@ export default function HomePage() {
           setFocusCardRequest({ id: linked.id, seq: Date.now() });
         }}
         onToggleLinkCard={handleToggleLinkCard}
+        onUpdatePairThreadColor={handleUpdatePairThreadColor}
         onStartWallLinking={(sourceId) => {
           setLayoutMode("wall");
           setLinkingFromCardId(sourceId);

@@ -6,6 +6,8 @@ export type ThemeMode = "daylight" | "night_lamp";
 
 export type PaperColor = "cream" | "butter" | "sage" | "blush" | "kraft";
 
+export type ThreadColor = "crimson" | "amber" | "sage" | "slate" | "gold";
+
 export type PosterTemplate = "polaroid" | "cinema" | "ticket";
 
 export interface BoardZone {
@@ -31,8 +33,9 @@ export interface MemoryCard {
   rotation?: number;
   paperColor?: PaperColor;
 
-  // 关联便签 ID 列表（用于墙面麻绳/红线连线）
+  // 关联便签 ID 列表与每条连线的颜色
   linkedCardIds?: string[];
+  linkedCardColors?: Record<string, ThreadColor>;
 
   // 正文内容
   rawContent: string;

@@ -17,10 +17,12 @@ import {
   Link2,
   Unlink,
 } from "lucide-react";
-import { MemoryCard, PaperColor } from "@/types/memory";
+import { MemoryCard, PaperColor, ThreadColor } from "@/types/memory";
 import {
   PAPER_COLOR_STYLES,
   resolveCardPaperColor,
+  THREAD_COLOR_LIST,
+  THREAD_COLOR_STYLES,
 } from "@/components/PinboardWall";
 import { exportCardAsPolaroidImage } from "@/utils/posterExport";
 import { triggerHaptic } from "@/utils/storageDb";
@@ -38,7 +40,16 @@ interface NoteDetailModalProps {
   onTagClick: (tag: string) => void;
   onOpenLightbox: (images: string[], startIndex: number, title?: string) => void;
   onSelectLinkedCard?: (card: MemoryCard) => void;
-  onToggleLinkCard?: (sourceId: string, targetId: string) => void;
+  onToggleLinkCard?: (
+    sourceId: string,
+    targetId: string,
+    color?: ThreadColor
+  ) => void;
+  onUpdatePairThreadColor?: (
+    sourceId: string,
+    targetId: string,
+    color: ThreadColor
+  ) => void;
   onStartWallLinking?: (sourceId: string) => void;
 }
 
@@ -56,6 +67,7 @@ export default function NoteDetailModal({
   onOpenLightbox,
   onSelectLinkedCard,
   onToggleLinkCard,
+  onUpdatePairThreadColor,
   onStartWallLinking,
 }: NoteDetailModalProps) {
   const [copied, setCopied] = useState(false);
@@ -326,38 +338,64 @@ export default function NoteDetailModal({
 
               {linkedCards.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
-                  {linkedCards.map((linked) => (
-                    <div
-                      key={linked.id}
-                      className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-white/80 border border-[#DFD2BA] text-xs text-[#3F3428]"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic(6);
-                          onSelectLinkedCard?.(linked);
-                        }}
-                        className="truncate max-w-[180px] hover:text-[#B84A39] cursor-pointer"
+                  {linkedCards.map((linked) => {
+                    const pairColor: ThreadColor =
+                      card.linkedCardColors?.[linked.id] ||
+                      linked.linkedCardColors?.[card.id] ||
+                      "crimson";
+                    const nextColor =
+                      THREAD_COLOR_LIST[
+                        (THREAD_COLOR_LIST.indexOf(pairColor) + 1) %
+                          THREAD_COLOR_LIST.length
+                      ];
+                    return (
+                      <div
+                        key={linked.id}
+                        className="inline-flex items-center gap-1.5 pl-2 pr-1.5 py-1 rounded-full bg-white/80 border border-[#DFD2BA] text-xs text-[#3F3428]"
                       >
-                        {linked.title ||
-                          linked.summary ||
-                          linked.rawContent.slice(0, 16)}
-                      </button>
-                      {onToggleLinkCard && (
+                        {onUpdatePairThreadColor && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic(6);
+                              onUpdatePairThreadColor(
+                                card.id,
+                                linked.id,
+                                nextColor
+                              );
+                            }}
+                            title={`当前：${THREAD_COLOR_STYLES[pairColor].label}（点击切换线色）`}
+                            className={`w-3.5 h-3.5 rounded-full border shrink-0 cursor-pointer ${THREAD_COLOR_STYLES[pairColor].dotBg}`}
+                          />
+                        )}
                         <button
                           type="button"
                           onClick={() => {
-                            triggerHaptic(8);
-                            onToggleLinkCard(card.id, linked.id);
+                            triggerHaptic(6);
+                            onSelectLinkedCard?.(linked);
                           }}
-                          title="解开红线关联"
-                          className="p-0.5 rounded-full text-[#9A8B7A] hover:text-red-600 cursor-pointer"
+                          className="truncate max-w-[175px] hover:text-[#B84A39] cursor-pointer"
                         >
-                          <Unlink className="w-3 h-3" />
+                          {linked.title ||
+                            linked.summary ||
+                            linked.rawContent.slice(0, 16)}
                         </button>
-                      )}
-                    </div>
-                  ))}
+                        {onToggleLinkCard && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic(8);
+                              onToggleLinkCard(card.id, linked.id);
+                            }}
+                            title="解开连线"
+                            className="p-0.5 rounded-full text-[#9A8B7A] hover:text-red-600 cursor-pointer"
+                          >
+                            <Unlink className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-[11px] text-[#8C7E6D]">

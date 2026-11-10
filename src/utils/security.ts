@@ -1,4 +1,4 @@
-import { CardType, MemoryCard, PaperColor } from "@/types/memory";
+import { CardType, MemoryCard, PaperColor, ThreadColor } from "@/types/memory";
 
 const VALID_CARD_TYPES = new Set<CardType>([
   "ai_insight",
@@ -12,6 +12,14 @@ const VALID_PAPER_COLORS = new Set<PaperColor>([
   "sage",
   "blush",
   "kraft",
+]);
+
+const VALID_THREAD_COLORS = new Set<ThreadColor>([
+  "crimson",
+  "amber",
+  "sage",
+  "slate",
+  "gold",
 ]);
 
 const VALID_TAPE_STYLES = new Set(["amber", "sage", "rose", "coffee"] as const);
@@ -251,6 +259,26 @@ export function sanitizeMemoryCard(
       ).slice(0, 20)
     : undefined;
 
+  let linkedCardColors: Record<string, ThreadColor> | undefined;
+  if (
+    obj.linkedCardColors &&
+    typeof obj.linkedCardColors === "object" &&
+    !Array.isArray(obj.linkedCardColors)
+  ) {
+    const cleanColors: Record<string, ThreadColor> = {};
+    for (const [k, v] of Object.entries(
+      obj.linkedCardColors as Record<string, unknown>
+    )) {
+      const safeId = clampString(k, 80).replace(/[^a-zA-Z0-9_-]/g, "");
+      if (safeId && VALID_THREAD_COLORS.has(v as ThreadColor)) {
+        cleanColors[safeId] = v as ThreadColor;
+      }
+    }
+    if (Object.keys(cleanColors).length > 0) {
+      linkedCardColors = cleanColors;
+    }
+  }
+
   return {
     id,
     type,
@@ -263,6 +291,7 @@ export function sanitizeMemoryCard(
     rotation,
     paperColor,
     ...(linkedCardIds && linkedCardIds.length > 0 ? { linkedCardIds } : {}),
+    ...(linkedCardColors ? { linkedCardColors } : {}),
     rawContent: rawContent || title || "记录此刻",
     ...(summary ? { summary } : {}),
     ...(typeof obj.aiModel === "string" && obj.aiModel.trim()

@@ -25,8 +25,58 @@ import {
   MemoryCard,
   PaperColor,
   ThemeMode,
+  ThreadColor,
 } from "@/types/memory";
 import { triggerHaptic } from "@/utils/storageDb";
+
+export const THREAD_COLOR_LIST: ThreadColor[] = [
+  "crimson",
+  "amber",
+  "sage",
+  "slate",
+  "gold",
+];
+
+export const THREAD_COLOR_STYLES: Record<
+  ThreadColor,
+  {
+    label: string;
+    stroke: string;
+    highlight: string;
+    dotBg: string;
+  }
+> = {
+  crimson: {
+    label: "朱砂红",
+    stroke: "#C84B39",
+    highlight: "rgba(255, 224, 216, 0.42)",
+    dotBg: "bg-[#C84B39] border-[#963223]",
+  },
+  amber: {
+    label: "亚麻棕",
+    stroke: "#B87A3D",
+    highlight: "rgba(255, 238, 210, 0.45)",
+    dotBg: "bg-[#B87A3D] border-[#8A5623]",
+  },
+  sage: {
+    label: "森系绿",
+    stroke: "#5B7D55",
+    highlight: "rgba(226, 244, 222, 0.42)",
+    dotBg: "bg-[#5B7D55] border-[#3F593A]",
+  },
+  slate: {
+    label: "雾霭蓝",
+    stroke: "#4E6E85",
+    highlight: "rgba(222, 238, 250, 0.42)",
+    dotBg: "bg-[#4E6E85] border-[#344D5E]",
+  },
+  gold: {
+    label: "流光金",
+    stroke: "#D49B35",
+    highlight: "rgba(255, 246, 214, 0.52)",
+    dotBg: "bg-[#D49B35] border-[#9E6E19]",
+  },
+};
 
 const BOARD_ZONES_STORAGE_KEY = "vibe_memory_board_zones_v1";
 
@@ -57,7 +107,16 @@ interface PinboardWallProps {
   themeMode?: ThemeMode;
   linkingFromCardId?: string | null;
   onCancelLinking?: () => void;
-  onToggleLinkCard?: (sourceId: string, targetId: string) => void;
+  onToggleLinkCard?: (
+    sourceId: string,
+    targetId: string,
+    color?: ThreadColor
+  ) => void;
+  onUpdatePairThreadColor?: (
+    sourceId: string,
+    targetId: string,
+    color: ThreadColor
+  ) => void;
   onSelectCard: (card: MemoryCard) => void;
   onTagClick: (tag: string) => void;
   onUpdateCardPosition: (id: string, boardX: number, boardY: number) => void;
@@ -254,6 +313,7 @@ export default function PinboardWall({
   linkingFromCardId = null,
   onCancelLinking,
   onToggleLinkCard,
+  onUpdatePairThreadColor,
   onSelectCard,
   onTagClick,
   onUpdateCardPosition,
@@ -273,6 +333,13 @@ export default function PinboardWall({
   const [isArranging, setIsArranging] = useState(false);
   const [isBoardLocked, setIsBoardLocked] = useState(false);
   const [threadMode, setThreadMode] = useState<"all" | "manual" | "off">("all");
+  const [activeLinkColor, setActiveLinkColor] =
+    useState<ThreadColor>("crimson");
+  const [selectedThreadPair, setSelectedThreadPair] = useState<{
+    fromId: string;
+    toId: string;
+    color: ThreadColor;
+  } | null>(null);
   const [zones, setZones] = useState<BoardZone[]>(DEFAULT_BOARD_ZONES);
   const [editingZone, setEditingZone] = useState<BoardZone | null>(null);
   const [spotlightId, setSpotlightId] = useState<string | null>(null);
@@ -445,7 +512,7 @@ export default function PinboardWall({
     return map;
   }, [positionedCards, draggingCardId, dragOffset]);
 
-  // 聚合墙面红线连线（手动关联红线 + 同标签同频麻绳线）
+  // 聚合墙面连线（手动关联彩色棉绳 + 同标签同频麻绳线）
   const boardThreads = useMemo(() => {
     if (threadMode === "off" && !linkingFromCardId) return [];
 
@@ -458,11 +525,11 @@ export default function PinboardWall({
       x2: number;
       y2: number;
       kind: "manual" | "tag";
-      label?: string;
+      color: ThreadColor;
     }[] = [];
     const seenPairs = new Set<string>();
 
-    // 1. 用户手动关联的思维红线
+    // 1. 用户手动关联的思维连线（支持每条连线独立选色）
     for (const { card } of positionedCards) {
       const linked = card.linkedCardIds || [];
       for (const targetId of linked) {
@@ -475,6 +542,10 @@ export default function PinboardWall({
         const p2 = cardLiveCoordsMap[targetId];
         if (!p1 || !p2) continue;
         seenPairs.add(pairKey);
+        const resolvedColor: ThreadColor =
+          card.linkedCardColors?.[targetId] ||
+          p2.card.linkedCardColors?.[card.id] ||
+          "crimson";
         threads.push({
           key: `manual-${pairKey}`,
           fromId: card.id,
@@ -484,7 +555,7 @@ export default function PinboardWall({
           x2: p2.x,
           y2: p2.y - 96,
           kind: "manual",
-          label: "关联",
+          color: resolvedColor,
         });
       }
     }
@@ -520,7 +591,7 @@ export default function PinboardWall({
             x2: p2.x,
             y2: p2.y - 96,
             kind: "tag",
-            label: `#${tag}`,
+            color: "amber",
           });
         }
       }
@@ -1053,30 +1124,124 @@ export default function PinboardWall({
         <div className="fixed inset-0 pointer-events-none lamp-ambient-cone z-[1]" />
       )}
 
-      {/* 墙面红线牵线引导横幅 */}
+      {/* 墙面牵线引导横幅（内置 5 色线团选择器） */}
       {linkingSourceCard && (
         <div
           onClick={(e) => e.stopPropagation()}
           className="fixed top-18 left-1/2 -translate-x-1/2 z-40 px-3 w-full max-w-md pointer-events-auto"
         >
-          <div className="rounded-2xl bg-[#2C251E]/95 text-[#FBF6E9] px-4 py-2.5 shadow-xl border border-[#B84A39] flex items-center justify-between gap-2 backdrop-blur-md">
-            <div className="flex items-center gap-2 min-w-0">
-              <Link2 className="w-4 h-4 text-[#E06D53] shrink-0 animate-pulse" />
-              <span className="text-xs truncate">
-                正在从「
-                {linkingSourceCard.title ||
-                  linkingSourceCard.summary ||
-                  linkingSourceCard.rawContent.slice(0, 12)}
-                」牵线：请点击目标便签
-              </span>
+          <div className="rounded-2xl bg-[#2C251E]/95 text-[#FBF6E9] px-4 py-3 shadow-xl border border-[#5E4B3B] flex flex-col gap-2.5 backdrop-blur-md">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Link2
+                  style={{ color: THREAD_COLOR_STYLES[activeLinkColor].stroke }}
+                  className="w-4 h-4 shrink-0 animate-pulse"
+                />
+                <span className="text-xs truncate">
+                  从「
+                  {linkingSourceCard.title ||
+                    linkingSourceCard.summary ||
+                    linkingSourceCard.rawContent.slice(0, 12)}
+                  」牵线：点击目标便签
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => onCancelLinking?.()}
+                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-[#E8C589] shrink-0 cursor-pointer"
+              >
+                完成
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => onCancelLinking?.()}
-              className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-[#E8C589] shrink-0 cursor-pointer"
-            >
-              完成
-            </button>
+
+            {/* 5 种线色实时切换 */}
+            <div className="flex items-center justify-between pt-1 border-t border-white/10">
+              <span className="text-[11px] text-[#C4B299]">
+                选择线色：{THREAD_COLOR_STYLES[activeLinkColor].label}
+              </span>
+              <div className="flex items-center gap-2">
+                {THREAD_COLOR_LIST.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic(6);
+                      setActiveLinkColor(c);
+                    }}
+                    title={THREAD_COLOR_STYLES[c].label}
+                    className={`w-5 h-5 rounded-full border-2 transition-transform cursor-pointer ${
+                      THREAD_COLOR_STYLES[c].dotBg
+                    } ${
+                      activeLinkColor === c
+                        ? "scale-125 ring-2 ring-[#FFFDF8]"
+                        : "opacity-75 hover:opacity-100"
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 点击墙上已有手动连线时弹出的轻量调色与解绑浮条 */}
+      {selectedThreadPair && !linkingSourceCard && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="fixed top-18 left-1/2 -translate-x-1/2 z-40 px-3 w-full max-w-xs pointer-events-auto"
+        >
+          <div className="rounded-2xl bg-[#2C251E]/95 text-[#FBF6E9] px-4 py-2.5 shadow-xl border border-[#5E4B3B] flex items-center justify-between gap-3 backdrop-blur-md">
+            <div className="flex items-center gap-2">
+              {THREAD_COLOR_LIST.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic(6);
+                    onUpdatePairThreadColor?.(
+                      selectedThreadPair.fromId,
+                      selectedThreadPair.toId,
+                      c
+                    );
+                    setSelectedThreadPair((prev) =>
+                      prev ? { ...prev, color: c } : null
+                    );
+                  }}
+                  title={THREAD_COLOR_STYLES[c].label}
+                  className={`w-5 h-5 rounded-full border-2 transition-transform cursor-pointer ${
+                    THREAD_COLOR_STYLES[c].dotBg
+                  } ${
+                    selectedThreadPair.color === c
+                      ? "scale-125 ring-2 ring-[#FFFDF8]"
+                      : "opacity-75 hover:opacity-100"
+                  }`}
+                />
+              ))}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(10);
+                  onToggleLinkCard?.(
+                    selectedThreadPair.fromId,
+                    selectedThreadPair.toId
+                  );
+                  setSelectedThreadPair(null);
+                }}
+                className="px-2 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs cursor-pointer"
+              >
+                解开
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedThreadPair(null)}
+                className="p-1 text-[#A39584] hover:text-white cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1156,7 +1321,7 @@ export default function PinboardWall({
           );
         })}
 
-        {/* 2. 便签图钉红线 / 同频麻绳 SVG 连线层（置于卡片顶层图钉高度，或卡片之间） */}
+        {/* 2. 便签图钉彩色棉线 / 同频麻绳 SVG 连线层（无文字标签、带捻股纹理与可点击换色） */}
         {boardThreads.length > 0 && (
           <svg
             width="1"
@@ -1167,71 +1332,83 @@ export default function PinboardWall({
               const dx = t.x2 - t.x1;
               const dy = t.y2 - t.y1;
               const dist = Math.hypot(dx, dy);
-              const sag = Math.min(85, Math.max(22, dist * 0.15));
+              const sag = Math.min(82, Math.max(20, dist * 0.14));
               const cx = (t.x1 + t.x2) / 2;
               const cy = (t.y1 + t.y2) / 2 + sag;
               const pathD = `M ${t.x1} ${t.y1} Q ${cx} ${cy} ${t.x2} ${t.y2}`;
-              // 二次贝塞尔曲线中点 (t=0.5)
-              const midX = 0.25 * t.x1 + 0.5 * cx + 0.25 * t.x2;
-              const midY = 0.25 * t.y1 + 0.5 * cy + 0.25 * t.y2;
+              const shadowPathD = `M ${t.x1} ${t.y1 + 2} Q ${cx} ${
+                cy + 7
+              } ${t.x2} ${t.y2 + 2}`;
               const isManual = t.kind === "manual";
+              const colorStyle =
+                THREAD_COLOR_STYLES[t.color] || THREAD_COLOR_STYLES.crimson;
 
               return (
                 <g key={t.key}>
-                  {/* 麻绳/红线柔和投影 */}
+                  {/* 悬空感柔和底影 */}
                   <path
-                    d={pathD}
+                    d={shadowPathD}
                     fill="none"
-                    stroke="rgba(28, 20, 12, 0.22)"
-                    strokeWidth={isManual ? 3.5 : 2.5}
-                    transform="translate(0, 4)"
-                  />
-                  {/* 主连线 */}
-                  <path
-                    d={pathD}
-                    fill="none"
-                    stroke={isManual ? "#C44D3B" : "#C88A3E"}
-                    strokeWidth={isManual ? 2.4 : 1.8}
-                    strokeDasharray={isManual ? undefined : "6 5"}
+                    stroke="rgba(28, 20, 12, 0.16)"
+                    strokeWidth={isManual ? 3.4 : 2.2}
                     strokeLinecap="round"
                   />
-                  {/* 两端图钉绳结圆环 */}
+                  {/* 主棉线 / 麻绳线条 */}
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke={colorStyle.stroke}
+                    strokeWidth={isManual ? 2.5 : 1.6}
+                    strokeDasharray={isManual ? undefined : "5 6"}
+                    strokeOpacity={isManual ? 0.94 : 0.62}
+                    strokeLinecap="round"
+                  />
+                  {/* 手动棉线的双股捻纹高光细节 */}
+                  {isManual && (
+                    <path
+                      d={pathD}
+                      fill="none"
+                      stroke={colorStyle.highlight}
+                      strokeWidth={1.05}
+                      strokeDasharray="3 5"
+                      strokeLinecap="round"
+                    />
+                  )}
+                  {/* 两端图钉绕线环结 */}
                   <circle
                     cx={t.x1}
                     cy={t.y1}
-                    r={4.2}
-                    fill={isManual ? "#C44D3B" : "#C88A3E"}
+                    r={isManual ? 5 : 3.8}
+                    fill="none"
+                    stroke={colorStyle.stroke}
+                    strokeWidth={isManual ? 1.9 : 1.4}
                   />
                   <circle
                     cx={t.x2}
                     cy={t.y2}
-                    r={4.2}
-                    fill={isManual ? "#C44D3B" : "#C88A3E"}
+                    r={isManual ? 5 : 3.8}
+                    fill="none"
+                    stroke={colorStyle.stroke}
+                    strokeWidth={isManual ? 1.9 : 1.4}
                   />
-                  {/* 曲线中点微章 */}
-                  {t.label && dist > 150 && (
-                    <g transform={`translate(${midX}, ${midY})`}>
-                      <rect
-                        x={-28}
-                        y={-10}
-                        width={56}
-                        height={20}
-                        rx={10}
-                        fill={isManual ? "#B84A39" : "#EFE3CC"}
-                        stroke={isManual ? "#8E3325" : "#CBB898"}
-                        strokeWidth={1}
-                      />
-                      <text
-                        x={0}
-                        y={3.5}
-                        textAnchor="middle"
-                        fontSize="9.5"
-                        fontWeight="600"
-                        fill={isManual ? "#FFFDF8" : "#5E4D3B"}
-                      >
-                        {t.label.slice(0, 5)}
-                      </text>
-                    </g>
+                  {/* 手动连线的透明宽触控区：点击连线即可弹出 5 色调色盘或解绑 */}
+                  {isManual && !isBoardLocked && (
+                    <path
+                      d={pathD}
+                      fill="none"
+                      stroke="transparent"
+                      strokeWidth={18}
+                      className="pointer-events-auto cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerHaptic(8);
+                        setSelectedThreadPair({
+                          fromId: t.fromId,
+                          toId: t.toId,
+                          color: t.color,
+                        });
+                      }}
+                    />
                   )}
                 </g>
               );
@@ -1313,7 +1490,11 @@ export default function PinboardWall({
                   if (linkingFromCardId === card.id) {
                     onCancelLinking?.();
                   } else {
-                    onToggleLinkCard?.(linkingFromCardId, card.id);
+                    onToggleLinkCard?.(
+                      linkingFromCardId,
+                      card.id,
+                      activeLinkColor
+                    );
                   }
                   return;
                 }
